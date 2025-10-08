@@ -40,3 +40,16 @@ a {
     color-scheme: dark;
   }
 }
+
+/* Hide number input spinners */
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+input {
+  -moz-appearance: textfield; /* Firefox will render a native text input */
+  appearance: none; /* Standard property to remove default styling */
+}
+
