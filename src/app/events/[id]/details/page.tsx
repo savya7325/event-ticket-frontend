@@ -14,6 +14,8 @@ interface Event {
   image?: string;
 }
 
+const API_URL = process.env.NEXT_PUBLIC_API_URL;
+
 export default function EventDetailsPage() {
   const params = useParams();
   const router = useRouter();
@@ -26,11 +28,18 @@ export default function EventDetailsPage() {
       if (!id) return;
       
       try {
-        const res = await fetch(`http://localhost:5000/api/events/${id}`);
+        const res = await fetch(`${API_URL}/api/events/${id}`);
         if (!res.ok) throw new Error("Failed to fetch event");
         const data = await res.json();
         console.log("Event data:", data);
-        setEvent(data);
+        // setEvent(data); 
+        setEvent({
+  ...data,
+ image: data.image
+  ? `${API_URL}/uploads/${data.image}`
+  : undefined,
+});
+
       } catch (err) {
         console.error(err);
       } finally {
@@ -106,7 +115,7 @@ export default function EventDetailsPage() {
           backgroundColor: "#1e1e1e"
         }}>
           <img
-            src={event.image ? `http://localhost:5000/uploads/${event.image}` : "https://images.unsplash.com/photo-1501281668745-f7f57925c3b4?auto=format&fit=crop&w=900&q=80"}
+            src={event.image ? event.image : "https://images.unsplash.com/photo-1501281668745-f7f57925c3b4?auto=format&fit=crop&w=900&q=80"}
             alt={event.title}
             style={{
               width: "100%",
@@ -154,32 +163,7 @@ export default function EventDetailsPage() {
           </p>
 
          
-          
-          {/* <ul style={{
-            color: "#f5f5f5",
-            fontSize: "1.05rem",
-            lineHeight: "1.8",
-            marginBottom: "20px",
-            paddingLeft: "25px"
-          }}>
-            <li style={{ marginBottom: "8px" }}>Live performances by talented musicians and bands</li>
-            <li style={{ marginBottom: "8px" }}>State-of-the-art sound system and lighting effects</li>
-            <li style={{ marginBottom: "8px" }}>Immersive stage production and visual displays</li>
-            <li style={{ marginBottom: "8px" }}>High-energy performances across multiple genres</li>
-            <li style={{ marginBottom: "8px" }}>Unforgettable atmosphere with passionate music lovers</li>
-            <li style={{ marginBottom: "8px" }}>Professional photography and video coverage</li>
-            <li style={{ marginBottom: "8px" }}>Premium venue with excellent acoustics</li>
-            <li style={{ marginBottom: "8px" }}>Food and beverage stalls available</li>
-          </ul> */}
-{/* 
-          <p style={{
-            color: "#f5f5f5",
-            fontSize: "1.1rem",
-            lineHeight: "1.9",
-            marginBottom: "20px"
-          }}>
-            Whether you're a die-hard music fan or simply looking for an amazing night out, this event promises to deliver an experience you won't forget. Get ready to dance, sing along, and create memories that will last a lifetime!
-          </p> */}
+      
 
           <p style={{
             color: "#f5f5f5",

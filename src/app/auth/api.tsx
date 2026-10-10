@@ -1,49 +1,21 @@
 
-// import axios from 'axios';
-
-// const API_URL = 'http://localhost:5000/api'; // backend URL
-
-// // Register user/admin (same route, backend decides role)
-// export const register = async (userData: any) => {
-//   const response = await axios.post(`${API_URL}/users/register`, userData);
-//   return response.data;
-// };
-
-// // Login user/admin
-// export const login = async (credentials: any) => {
-//   const response = await axios.post(`${API_URL}/users/login`, credentials);
-//   return response.data;
-// };
-
-// // Logout (frontend just clears token)
-// export const logout = () => {
-//   localStorage.removeItem('user');
-// };
-
-
-// export const getEvents = async () => {
-//   const response = await axios.get(`${API_URL}/events`);
-//   return response.data;
-// };
-
-// // Create a new event (admin only, requires token)
-// export const createEvent = async (eventData: any, token: string) => {
-//   const response = await axios.post(`${API_URL}/events`, eventData, {
-//     headers: { Authorization: `Bearer ${token}` },
-//   });
-//   return response.data;
-// };
-
 
 import axios from 'axios';
 
-const API_URL = 'http://localhost:5000/api'; // backend URL
+// const API_URL = '${API_URL}/api'; // backend URL
+
+const API_URL = `${process.env.NEXT_PUBLIC_API_URL}/api`;
 
 // Configure axios to handle errors consistently
 axios.interceptors.response.use(
   (response) => response,
   (error) => {
-    // Pass through the error for handling in components
+    if (error.response?.status === 401) {
+      localStorage.removeItem('user');
+      if (typeof window !== 'undefined') {
+        window.location.href = '/';
+      }
+    }
     return Promise.reject(error);
   }
 );
@@ -102,7 +74,7 @@ export const createEvent = async (eventData: any, token: string) => {
     const response = await axios.post(`${API_URL}/events`, eventData, {
       headers: { 
         Authorization: `Bearer ${token}`,
-        'Content-Type': 'multipart/form-data' // For file uploads
+        // 'Content-Type': 'multipart/form-data' // For file uploads
       },
     });
     return response.data;
@@ -117,7 +89,7 @@ export const updateEvent = async (id: string, eventData: any, token: string) => 
     const response = await axios.put(`${API_URL}/events/${id}`, eventData, {
       headers: { 
         Authorization: `Bearer ${token}`,
-        'Content-Type': 'multipart/form-data'
+        // 'Content-Type': 'multipart/form-data'
       },
     });
     return response.data;

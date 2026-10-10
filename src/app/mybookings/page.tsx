@@ -38,7 +38,7 @@
 //   }
 
 //   // fetch bookings using the token
-//   fetch("http://localhost:5000/api/bookings/mybookings", {
+//   fetch("${API_URL}/api/bookings/mybookings", {
 //     headers: { Authorization: `Bearer ${token}` },
 //   })
 //     .then(async (res) => {
@@ -154,8 +154,8 @@ export default function MyBookingsPage() {
       router.push("/");
       return;
     }
-
-    fetch("http://localhost:5000/api/bookings/mybookings", {
+const API_URL = process.env.NEXT_PUBLIC_API_URL;
+    fetch(`${API_URL}/api/bookings/mybookings`, {
       headers: { Authorization: `Bearer ${token}` },
     })
       .then(async (res) => {

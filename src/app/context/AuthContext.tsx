@@ -1,8 +1,6 @@
 'use client';
-import { createContext, useContext, useState, ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { login as loginApi, register as registerApi, logout as logoutApi } from '../auth/api';
-
-
 
 interface User {
   _id: string;
@@ -14,17 +12,29 @@ interface User {
 
 interface AuthContextType {
   user: User | null;
+  loading: boolean;
   login: (credentials: { email: string; password: string }) => Promise<void>;
-  register: (data: { username: string; email: string; password: string; role?: string; adminSecret?: string }) => Promise<void>;
+  register: (data: { username: string; email: string; password: string }) => Promise<void>;
   logout: () => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
-  const [user, setUser] = useState<User | null>(
-    typeof window !== 'undefined' ? JSON.parse(localStorage.getItem('user') || 'null') : null
-  );
+  const [user, setUser] = useState<User | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem('user');
+      if (stored) setUser(JSON.parse(stored));
+    } catch (err) {
+      console.error('Failed to parse stored user', err);
+      localStorage.removeItem('user');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   const login = async (credentials: { email: string; password: string }) => {
     const data = await loginApi(credentials);
@@ -32,7 +42,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     localStorage.setItem('user', JSON.stringify(data));
   };
 
-  const register = async (data: { username: string; email: string; password: string; role?: string; adminSecret?: string }) => {
+  const register = async (data: { username: string; email: string; password: string }) => {
     const response = await registerApi(data);
     setUser(response);
     localStorage.setItem('user', JSON.stringify(response));
@@ -43,7 +53,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     logoutApi();
   };
 
-  return <AuthContext.Provider value={{ user, login, register, logout }}>{children}</AuthContext.Provider>;
+  return (
+    <AuthContext.Provider value={{ user, loading, login, register, logout }}>
+      {children}
+    </AuthContext.Provider>
+  );
 };
 
 export const useAuth = () => {

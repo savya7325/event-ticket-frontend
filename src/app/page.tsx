@@ -1,40 +1,37 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { login, register } from "./auth/api";
+import { useAuth } from "./context/AuthContext";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 
 export default function Home() {
+  const { login, register } = useAuth();
   const [isRegister, setIsRegister] = useState(false);
   const [formData, setFormData] = useState({
     username: "",
     email: "",
     password: "",
-    role: "user",
-    adminSecret: "",
   });
   const [message, setMessage] = useState("");
   const [current, setCurrent] = useState(0);
 
   const router = useRouter();
 
-  // Video slider
   const videos = [
     "https://www.pexels.com/download/video/2845487/",
     "https://www.pexels.com/download/video/31580002/",
     "https://images.pexels.com/photos/2101488/pexels-photo-2101488.jpeg"
-
   ];
 
   useEffect(() => {
     const interval = setInterval(() => {
       setCurrent((prev) => (prev + 1) % videos.length);
-    }, 7000); // 7s per video
+    }, 7000);
     return () => clearInterval(interval);
   }, []);
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
   };
 
@@ -42,19 +39,23 @@ export default function Home() {
     e.preventDefault();
     try {
       if (isRegister) {
-        const res = await register(formData);
-        setMessage(` Registered: ${res.message || "Success"}`);
-        if (formData.role === "admin") router.push("/events");
+        await register({
+          username: formData.username,
+          email: formData.email,
+          password: formData.password,
+        });
+        setMessage("Registered successfully");
+        router.push("/events");
       } else {
-        const res = await login({ email: formData.email, password: formData.password });
-        localStorage.setItem("user", JSON.stringify(res));
-        setMessage(`Logged in as ${res.username} (${res.role})`);
+        await login({ email: formData.email, password: formData.password });
+        setMessage("Logged in");
         router.push("/events");
       }
     } catch (error: any) {
-      setMessage(` Error: ${error.response?.data?.message || error.message}`);
+      setMessage(`Error: ${error.response?.data?.message || error.message}`);
     }
   };
+
 
   return (
     <div style={{ position: "relative", minHeight: "100vh", overflow: "hidden", fontFamily: "'Roboto', sans-serif" }}>
@@ -169,53 +170,38 @@ export default function Home() {
             {isRegister ? "Register" : "Login"}
           </h2>
 
-          {isRegister && (
-            <>
-              <input
-                type="text"
-                name="username"
-                placeholder="Username"
-                value={formData.username}
-                onChange={handleChange}
-                required
-                style={inputStyle}
-              />
-              <select name="role" value={formData.role} onChange={handleChange} style={inputStyle}>
-                <option value="user">User</option>
-                <option value="admin">Admin</option>
-              </select>
-              {formData.role === "admin" && (
-                <input
-                  type="text"
-                  name="adminSecret"
-                  placeholder="Admin Secret"
-                  value={formData.adminSecret}
-                  onChange={handleChange}
-                  required
-                  style={inputStyle}
-                />
-              )}
-            </>
-          )}
+        {isRegister && (
+  <input
+    type="text"
+    name="username"
+    placeholder="Username"
+    value={formData.username}
+    onChange={handleChange}
+    required
+    style={inputStyle}
+  />
+)}
 
-          <input
-            type="email"
-            name="email"
-            placeholder="Email"
-            value={formData.email}
-            onChange={handleChange}
-            required
-            style={inputStyle}
-          />
-          <input
-            type="password"
-            name="password"
-            placeholder="Password"
-            value={formData.password}
-            onChange={handleChange}
-            required
-            style={inputStyle}
-          />
+<input
+  type="email"
+  name="email"
+  placeholder="Email"
+  autoComplete="off"
+  value={formData.email}
+  onChange={handleChange}
+  required
+  style={inputStyle}
+/>
+<input
+  type="password"
+  name="password"
+  placeholder="Password"
+  autoComplete="new-password"
+  value={formData.password}
+  onChange={handleChange}
+  required
+  style={inputStyle}
+/>
 
           <button type="submit" style={buttonStyle}>
             {isRegister ? "Register" : "Login"}

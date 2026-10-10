@@ -197,6 +197,8 @@ import {
   Alert,
 } from "@mui/material";
 
+const API_URL = process.env.NEXT_PUBLIC_API_URL;
+
 export default function CheckoutPage() {
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -235,7 +237,7 @@ export default function CheckoutPage() {
 
       const totalPrice = seats.length * price;
 
-      const res = await fetch(`http://localhost:5000/api/events/${eventId}/book`, {
+      const res = await fetch(`${API_URL}/api/events/${eventId}/book`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

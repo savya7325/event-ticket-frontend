@@ -36,7 +36,7 @@ interface DecodedToken {
 }
 
 export default function Events() {
-  const API_URL = "http://localhost:5000";
+ const API_URL = process.env.NEXT_PUBLIC_API_URL;
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -85,12 +85,21 @@ export default function Events() {
 
       const data: Event[] = await res.json();
       const normalized = data.map(ev => ({
-        ...ev,
-        dates: ev.dates?.map(d => new Date(d).toISOString()) || [],
-        image: ev.image ? `${API_URL}/uploads/${ev.image}` : undefined, 
-        seatsPerDate: ev.seatsPerDate || {},
-        bookedSeats: ev.bookedSeats || {},
-      }));
+  ...ev,
+  dates: ev.dates?.map(d => new Date(d).toISOString()) || [],
+  image: ev.image ? `${API_URL}/uploads/events/${ev.image}` : undefined, 
+
+  seatsPerDate: ev.seatsPerDate || {},
+  bookedSeats: ev.bookedSeats || {},
+}));
+
+      // const normalized = data.map(ev => ({
+      //   ...ev,
+      //   dates: ev.dates?.map(d => new Date(d).toISOString()) || [],
+      //   image: ev.image ? `${API_URL}/uploads/${ev.image}` : undefined, 
+      //   seatsPerDate: ev.seatsPerDate || {},
+      //   bookedSeats: ev.bookedSeats || {},
+      // }));
       setEvents(normalized);
     } catch (err) {
       console.error(err);
@@ -257,23 +266,7 @@ const handlePageChange = (event: React.ChangeEvent<unknown>, value: number) => {
       <EventHeader title="Upcoming Events" />
 
       {role === "admin" && (
-        <>
-          {/* <Button
-            variant="contained"
-            sx={{
-              bgcolor: "#6a11cb",
-              color: "white",
-              fontWeight: "bold",
-              marginLeft: "700px",
-              marginBottom: "20px",
-              marginTop: "20px",
-            }}
-            onClick={() => setAddDrawerOpen(true)}
-          >
-            Add Event
-          </Button> */}
-
-
+        <>   
 <Button
   variant="contained"
   sx={{ bgcolor: "#6a11cb", color: "white", fontWeight: "bold", marginLeft: "700px", marginBottom: "20px", marginTop: "20px" }}
