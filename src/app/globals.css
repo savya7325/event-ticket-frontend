@@ -1,13 +1,7 @@
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  --background: #0d0a14;
+  --foreground: #f5f3ff;
+  color-scheme: dark;
 }
 
 html,
@@ -19,9 +13,12 @@ body {
 body {
   color: var(--foreground);
   background: var(--background);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans), system-ui, -apple-system, "Segoe UI", sans-serif;
+  line-height: 1.5;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  -webkit-tap-highlight-color: transparent;
+  text-rendering: optimizeLegibility;
 }
 
 * {
@@ -35,12 +32,6 @@ a {
   text-decoration: none;
 }
 
-@media (prefers-color-scheme: dark) {
-  html {
-    color-scheme: dark;
-  }
-}
-
 /* Hide number input spinners */
 input[type="number"]::-webkit-inner-spin-button,
 input[type="number"]::-webkit-outer-spin-button {
@@ -49,7 +40,65 @@ input[type="number"]::-webkit-outer-spin-button {
 }
 
 input {
-  -moz-appearance: textfield; /* Firefox will render a native text input */
-  appearance: none; /* Standard property to remove default styling */
+  -moz-appearance: textfield;
+  appearance: none;
 }
 
+/* ---------- Motion ---------- */
+
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(14px); }
+  to { opacity: 1; transform: none; }
+}
+
+/* Page sections ease in one after another (works on touch screens too). */
+.stagger > * {
+  animation: fade-up 0.5s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+.stagger > *:nth-child(1) { animation-delay: 0.02s; }
+.stagger > *:nth-child(2) { animation-delay: 0.08s; }
+.stagger > *:nth-child(3) { animation-delay: 0.14s; }
+.stagger > *:nth-child(4) { animation-delay: 0.2s; }
+.stagger > *:nth-child(5) { animation-delay: 0.26s; }
+.stagger > *:nth-child(n + 6) { animation-delay: 0.32s; }
+
+/* Touch devices have no hover, so give taps a pressed feel instead. */
+@media (hover: none) {
+  .MuiButtonBase-root,
+  a,
+  .tap {
+    transition: transform 0.12s ease, opacity 0.12s ease;
+  }
+  .MuiButtonBase-root:active,
+  a:active,
+  .tap:active {
+    transform: scale(0.97);
+    opacity: 0.9;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-delay: 0s !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Browser autofill (saved passwords): keep the dark field and app font instead of
+   Chrome's pale-blue box. The long transition stops Chrome repainting its own background. */
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus {
+  -webkit-text-fill-color: #f5f3ff;
+  caret-color: #f5f3ff;
+  -webkit-box-shadow: 0 0 0 1000px #1d1828 inset;
+  box-shadow: 0 0 0 1000px #1d1828 inset;
+  transition: background-color 9999s ease-out 0s;
+  font-family: var(--font-sans), system-ui, sans-serif;
+}
+input:-webkit-autofill::first-line {
+  font-family: var(--font-sans), system-ui, sans-serif;
+}

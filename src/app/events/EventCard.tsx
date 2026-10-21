@@ -6,24 +6,21 @@ import {
   Drawer,
   Button,
   Box,
-  TextField,
   Typography,
   Card,
   CardContent,
   CardMedia,
   CardActions,
-  FormControl,
-  InputLabel,
-  Select,
-  MenuItem,
   Dialog,
   DialogTitle,
   DialogContent,
   DialogActions,
 } from "@mui/material";
 import ConfirmationNumberIcon from "@mui/icons-material/ConfirmationNumber";
-import dayjs, { Dayjs } from "dayjs";
-import ClientDatePicker from "./ClientDatePicker";
+import ConfirmDialog from "../components/ConfirmDialog";
+import dayjs from "dayjs";
+import EventForm from "./EventForm";
+import { capacityOf, nextShowDate, seatsLeftOn } from "../components/seats";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL;
 
@@ -34,6 +31,7 @@ interface Event {
   dates: string[];
   location?: string;
   price?: number;
+  capacity?: number;
   ticketsAvailable?: number;
   image?: string;
   seatsPerDate?: Record<string, number>;
@@ -43,7 +41,8 @@ interface Event {
 interface Props {
   event: Event;
   role: "user" | "admin";
-  onEdit: (id: string, data: FormData) => Promise<void>;
+  // Resolves with the saved event (null if the update failed).
+  onEdit: (id: string, data: FormData) => Promise<Event | null>;
   onDelete: (id: string) => Promise<void>;
   seatsPerDate?: Record<string, number>;
   bookedSeats?: Record<string, string[]>;
@@ -54,19 +53,15 @@ export default function EventCard({ event, role, onEdit, onDelete }: Props) {
 
   const [eventData, setEventData] = useState<Event>(event);
   const [editOpen, setEditOpen] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const [bookDialogOpen, setBookDialogOpen] = useState(false);
 
-  const [form, setForm] = useState({
-    title: event.title,
-    description: event.description,
-    dates: event.dates || [],
-    location: event.location || "",
-    price: event.price || "",
-    ticketsAvailable: event.ticketsAvailable || "",
-  });
 
-  const [imageFile, setImageFile] = useState<File | null>(null);
-  const [newDate, setNewDate] = useState<Dayjs | null>(null);
+  const imageUrl = eventData.image
+    ? eventData.image.startsWith("http")
+      ? eventData.image
+      : `${API_URL}${eventData.image}`
+    : undefined;
 
   const [selectedDate, setSelectedDate] = useState(event.dates[0] || "");
   const [selectedSeats, setSelectedSeats] = useState<string[]>([]);
@@ -108,11 +103,21 @@ export default function EventCard({ event, role, onEdit, onDelete }: Props) {
 };
   // Render seat grid with dynamic layout
   const renderSeats = () => {
-    const totalSeats = eventData.ticketsAvailable || 50;
+    const totalSeats = capacityOf(eventData); // fixed hall size, never shrinks
     const { rows, seatsPerRow } = calculateSeatLayout(totalSeats);
-    // const booked = eventData.bookedSeats?.[selectedDate] || [];
     const booked = eventData.bookedSeats?.[selectedDate.slice(0, 10)] || [];
+    // Split wide rows with a center aisle, like a real hall.
+    const aisleAfter = seatsPerRow >= 6 ? Math.ceil(seatsPerRow / 2) : 0;
     let seatCount = 0;
+
+    const rowLabelSx = {
+      width: 20,
+      textAlign: "center",
+      fontSize: "0.7rem",
+      fontWeight: 600,
+      letterSpacing: 1,
+      color: "rgba(196,181,253,0.55)",
+    } as const;
 
     return rows.map(row => {
       const seatsInThisRow = Math.min(seatsPerRow, totalSeats - seatCount);
@@ -123,79 +128,77 @@ export default function EventCard({ event, role, onEdit, onDelete }: Props) {
         const isSelected = selectedSeats.includes(seat);
 
         return (
-          <button
+          <Box
             key={seat}
+            component="button"
+            type="button"
             disabled={isBooked}
             onClick={() => toggleSeat(seat)}
-            style={{
-              width: 35,
-              height: 35,
-              background: isBooked ? "red" : isSelected ? "orange" : "green",
-              color: "white",
-              border: "none",
-              borderRadius: 3,
-              cursor: isBooked ? "not-allowed" : "pointer",
-              fontSize: "0.75rem",
+            aria-label={`Seat ${seat}${isBooked ? " (booked)" : ""}`}
+            aria-pressed={isSelected}
+            title={seat}
+            sx={{
+              width: 30,
+              height: 28,
+              mr: aisleAfter && i + 1 === aisleAfter ? 3 : 0,
+              borderRadius: "9px 9px 5px 5px",
+              fontSize: "0.65rem",
+              fontWeight: 600,
+              fontFamily: "inherit",
+              p: 0,
+              transition: "transform .15s ease, background .15s ease, box-shadow .15s ease",
+              ...(isBooked
+                ? {
+                    bgcolor: "rgba(255,255,255,0.06)",
+                    border: "1px solid transparent",
+                    color: "rgba(255,255,255,0.18)",
+                    cursor: "not-allowed",
+                  }
+                : isSelected
+                ? {
+                    background: "linear-gradient(180deg, #fcd34d, #f59e0b)",
+                    border: "1px solid #fcd34d",
+                    color: "#1a1325",
+                    cursor: "pointer",
+                    boxShadow: "0 4px 14px rgba(245,158,11,0.45)",
+                    transform: "translateY(-2px)",
+                  }
+                : {
+                    bgcolor: "rgba(139,92,246,0.08)",
+                    border: "1px solid rgba(167,139,250,0.45)",
+                    color: "#c4b5fd",
+                    cursor: "pointer",
+                    "&:hover": {
+                      bgcolor: "rgba(139,92,246,0.3)",
+                      borderColor: "#a78bfa",
+                      color: "#fff",
+                      transform: "translateY(-2px)",
+                    },
+                  }),
+              "&:focus-visible": { outline: "2px solid #fcd34d", outlineOffset: 2 },
             }}
           >
-            {seat}
-          </button>
+            {i + 1}
+          </Box>
         );
       });
 
       return (
-        <div key={row} style={{ display: "flex", gap: 5, marginBottom: 5, justifyContent: "center" }}>
-          {rowSeats}
-        </div>
+        <Box key={row} sx={{ display: "flex", alignItems: "center", gap: 0.75, justifyContent: "center" }}>
+          <Box sx={rowLabelSx}>{row}</Box>
+          <Box sx={{ display: "flex", gap: 0.75 }}>{rowSeats}</Box>
+          <Box sx={rowLabelSx}>{row}</Box>
+        </Box>
       );
     });
   };
 
-  // Handle form change
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
-    const { name, value, files } = e.target as HTMLInputElement;
-    if (name === "image" && files) setImageFile(files[0]);
-    else if (name === "price" || name === "ticketsAvailable") {
-      // Allow empty string or valid number
-      setForm(prev => ({
-        ...prev,
-        [name]: value === "" ? "" : Number(value)
-      }));
-    } else {
-      setForm(prev => ({
-        ...prev,
-        [name]: value
-      }));
-    }
-  };
+  const seatsLeft = selectedDate ? seatsLeftOn(eventData, selectedDate) : capacityOf(eventData);
+  // Card badge: seats left for the next upcoming show.
+  const nextDate = nextShowDate(eventData);
+  const nextLeft = nextDate ? seatsLeftOn(eventData, nextDate) : 0;
+  const totalPrice = selectedSeats.length * (eventData.price || 0);
 
-  // Submit edit form
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const formData = new FormData();
-    formData.append("title", form.title);
-    formData.append("description", form.description);
-    form.dates.forEach(d => formData.append("dates[]", d));
-    formData.append("location", form.location);
-    formData.append("price", form.price.toString());
-    formData.append("ticketsAvailable", form.ticketsAvailable.toString());
-    if (imageFile) formData.append("image", imageFile);
-
-    await onEdit(event._id, formData);
-    
-    // Update local state immediately
-    setEventData(prev => ({
-      ...prev,
-      title: form.title,
-      description: form.description,
-      dates: form.dates,
-      location: form.location,
-      price: typeof form.price === 'number' ? form.price : Number(form.price) || 0,
-      ticketsAvailable: typeof form.ticketsAvailable === 'number' ? form.ticketsAvailable : Number(form.ticketsAvailable) || 0,
-    }));
-    
-    setEditOpen(false);
-  };
 
   return (
     <>
@@ -223,13 +226,7 @@ export default function EventCard({ event, role, onEdit, onDelete }: Props) {
   component="img"
   height="180"
 
-  image={
-  eventData.image
-    ? eventData.image.startsWith("http")
-      ? eventData.image
-      : `${API_URL}${eventData.image}`
-    : "/default-image.jpg"
-}
+  image={imageUrl ?? "/default-image.jpg"}
 
 />
 
@@ -268,7 +265,7 @@ export default function EventCard({ event, role, onEdit, onDelete }: Props) {
             </Typography>
           )}
 
-          {/* FIXED: Show ticketsAvailable per event, not sum of all dates */}
+          {/* Seats left for the next show date (each date has its own count) */}
           <Box sx={{ display: "flex", alignItems: "center", mt: 1 }}>
             <Typography
               variant="body2"
@@ -277,15 +274,17 @@ export default function EventCard({ event, role, onEdit, onDelete }: Props) {
                 alignItems: "center",
                 gap: 0.5,
                 fontWeight: "bold",
-                color: (eventData.ticketsAvailable || 0) > 0 ? "#4caf50" : "#ff5252",
-                bgcolor: (eventData.ticketsAvailable || 0) > 0 ? "rgba(76,175,80,0.1)" : "rgba(255,82,82,0.1)",
+                color: nextLeft > 0 ? "#4caf50" : "#ff5252",
+                bgcolor: nextLeft > 0 ? "rgba(76,175,80,0.1)" : "rgba(255,82,82,0.1)",
                 px: 1.5,
                 py: 0.5,
                 borderRadius: 2,
                 fontSize: "0.85rem",
               }}
             >
-              <ConfirmationNumberIcon fontSize="small" /> {eventData.ticketsAvailable || 0} Tickets Available
+              <ConfirmationNumberIcon fontSize="small" />{" "}
+              {nextLeft > 0 ? `${nextLeft} of ${capacityOf(eventData)} seats left` : "Sold out"}
+              {eventData.dates.length > 1 && nextDate ? ` · ${dayjs(nextDate).format("D MMM")}` : ""}
             </Typography>
           </Box>
         </CardContent>
@@ -309,7 +308,7 @@ export default function EventCard({ event, role, onEdit, onDelete }: Props) {
               >
                 Edit
               </Button>
-              <Button variant="outlined" color="error" onClick={() => onDelete(event._id)}>
+              <Button variant="outlined" color="error" onClick={() => setConfirmDelete(true)}>
                 Delete
               </Button>
             </>
@@ -317,153 +316,257 @@ export default function EventCard({ event, role, onEdit, onDelete }: Props) {
         </CardActions>
       </Card>
 
-      {/* Admin Drawer */}
-      <Drawer anchor="right" open={editOpen} onClose={() => setEditOpen(false)}>
-        <Box sx={{ width: 400, p: 3 }}>
-          <Typography variant="h6" sx={{ mb: 2 }}>
-            Edit Event
-          </Typography>
-          <form onSubmit={handleSubmit}>
-            <TextField fullWidth label="Title" name="title" value={form.title} onChange={handleChange} sx={{ mb: 2 }} />
-            <TextField fullWidth label="Description" name="description" value={form.description} onChange={handleChange} sx={{ mb: 2 }} />
-            <Box sx={{ mb: 2 }}>
-              <Typography sx={{ mb: 1 }}>Dates</Typography>
-              <ClientDatePicker label="Select Date" value={newDate} onChange={setNewDate} />
-              <Button
-                variant="contained"
-                onClick={() => {
-                  if (newDate) {
-                    const iso = newDate.toISOString();
-                    if (!form.dates.includes(iso)) setForm(prev => ({ ...prev, dates: [...prev.dates, iso] }));
-                    setNewDate(null);
-                  }
-                }}
-                sx={{ mt: 1, mb: 1 }}
-              >
-                Add Date
-              </Button>
-              <Box>
-                {form.dates.map(d => (
-                  <Box key={d} sx={{ display: "flex", alignItems: "center", gap: 1, mb: 1 }}>
-                    <Typography>{dayjs(d).format("DD/MM/YYYY")}</Typography>
-                    <Button
-                      size="small"
-                      color="error"
-                      onClick={() => setForm(prev => ({ ...prev, dates: prev.dates.filter(date => date !== d) }))}
-                    >
-                      Remove
-                    </Button>
-                  </Box>
-                ))}
-              </Box>
-            </Box>
+      <ConfirmDialog
+        open={confirmDelete}
+        title="Delete this event?"
+        message="It will be removed from the site and can't be booked any more. This can't be undone."
+        details={[
+          ["Event", eventData.title],
+          ["Dates", eventData.dates.map(d => dayjs(d).format("D MMM YYYY")).join(", ") || "—"],
+          ["Location", eventData.location || "—"],
+        ]}
+        confirmLabel="Delete event"
+        cancelLabel="Keep event"
+        onConfirm={async () => {
+          await onDelete(event._id);
+          setConfirmDelete(false);
+        }}
+        onClose={() => setConfirmDelete(false)}
+      />
 
-            <TextField fullWidth label="Location" name="location" value={form.location} onChange={handleChange} sx={{ mb: 2 }} />
-            
-            {/* FIXED: Remove spinner from number inputs */}
-            <TextField 
-              fullWidth 
-              label="Price" 
-              type="number" 
-              name="price" 
-              value={form.price} 
-              onChange={handleChange}
-              placeholder="Enter price"
-              inputProps={{ min: 0, step: "any" }}
-              sx={{ 
-                mb: 2,
-                '& input[type=number]::-webkit-inner-spin-button, & input[type=number]::-webkit-outer-spin-button': {
-                  WebkitAppearance: 'none',
-                  margin: 0
-                },
-                '& input[type=number]': {
-                  MozAppearance: 'textfield'
-                }
-              }} 
-            />
-            
-            <TextField 
-              fullWidth 
-              label="Tickets Available" 
-              type="number" 
-              name="ticketsAvailable" 
-              value={form.ticketsAvailable} 
-              onChange={handleChange}
-              placeholder="Enter ticket count"
-              inputProps={{ min: 1 }}
-              sx={{ 
-                mb: 2,
-                '& input[type=number]::-webkit-inner-spin-button, & input[type=number]::-webkit-outer-spin-button': {
-                  WebkitAppearance: 'none',
-                  margin: 0
-                },
-                '& input[type=number]': {
-                  MozAppearance: 'textfield'
-                }
-              }} 
-            />
-            
-            <TextField fullWidth type="file" name="image" onChange={handleChange} sx={{ mb: 2 }} />
-
-            <Button variant="contained" type="submit" sx={{ mt: 1 }}>
-              Save Changes
-            </Button>
-          </form>
-        </Box>
+      {/* Admin edit drawer: same dark form as "Add event" */}
+      <Drawer
+        anchor="right"
+        open={editOpen}
+        onClose={() => setEditOpen(false)}
+        slotProps={{
+          paper: {
+            sx: {
+              width: { xs: "100%", sm: 500 },
+              bgcolor: "#120e1a",
+              backgroundImage: "none",
+              borderLeft: "1px solid rgba(255,255,255,0.08)",
+              boxShadow: "-30px 0 80px rgba(0,0,0,0.5)",
+            },
+          },
+          backdrop: { sx: { bgcolor: "rgba(5,3,10,0.6)", backdropFilter: "blur(4px)" } },
+        }}
+      >
+        <EventForm
+          compact
+          mode="edit"
+          initial={{
+            title: eventData.title,
+            description: eventData.description,
+            dates: eventData.dates,
+            location: eventData.location,
+            price: eventData.price,
+            ticketsAvailable: capacityOf(eventData), // edit form works in seats per show
+            imageUrl: imageUrl,
+          }}
+          onClose={() => setEditOpen(false)}
+          onSave={async data => {
+            const updated = await onEdit(event._id, data);
+            // Use what the server saved (incl. the new image URL) so the card updates without a refresh.
+            if (updated) setEventData(updated);
+            return !!updated;
+          }}
+          onSuccess={() => setEditOpen(false)}
+        />
       </Drawer>
 
       {/* Booking Dialog */}
-      <Dialog open={bookDialogOpen} onClose={() => setBookDialogOpen(false)} fullWidth maxWidth="md">
-        <DialogTitle>Book Seats for {eventData.title}</DialogTitle>
-        <DialogContent>
-          <FormControl fullWidth sx={{ mb: 2 }}>
-            <InputLabel>Date</InputLabel>
-            <Select
-              value={selectedDate}
-              label="Date"
-              onChange={e => {
-                setSelectedDate(e.target.value);
-                setSelectedSeats([]);
-              }}
-            >
-              {eventData.dates.map(d => (
-                <MenuItem key={d} value={d}>
-                  {dayjs(d).format("DD/MM/YYYY")}
-                </MenuItem>
+      <Dialog
+        open={bookDialogOpen}
+        onClose={() => setBookDialogOpen(false)}
+        fullWidth
+        maxWidth="md"
+        PaperProps={{
+          sx: {
+            bgcolor: "#130f1c",
+            backgroundImage: "radial-gradient(ellipse at top, rgba(124,58,237,0.18), transparent 60%)",
+            color: "#fff",
+            borderRadius: 4,
+            border: "1px solid rgba(167,139,250,0.18)",
+            boxShadow: "0 30px 80px rgba(0,0,0,0.6)",
+          },
+        }}
+      >
+        <DialogTitle sx={{ pb: 1, pt: 3, px: { xs: 2.5, sm: 4 } }}>
+          <Typography sx={{ fontSize: "0.7rem", letterSpacing: 3, color: "#a78bfa", fontWeight: 600 }}>
+            SELECT YOUR SEATS
+          </Typography>
+          <Typography sx={{ fontSize: "1.5rem", fontWeight: 700, mt: 0.5 }}>{eventData.title}</Typography>
+          {eventData.location && (
+            <Typography sx={{ fontSize: "0.85rem", color: "rgba(255,255,255,0.55)", mt: 0.25 }}>
+              {eventData.location}
+            </Typography>
+          )}
+        </DialogTitle>
+
+        <DialogContent sx={{ px: { xs: 2.5, sm: 4 } }}>
+          {/* Date picker as pills */}
+          <Box sx={{ display: "flex", gap: 1.25, overflowX: "auto", py: 1.5, mb: 1 }}>
+            {eventData.dates.map(d => {
+              const active = d === selectedDate;
+              return (
+                <Box
+                  key={d}
+                  component="button"
+                  type="button"
+                  onClick={() => {
+                    setSelectedDate(d);
+                    setSelectedSeats([]);
+                  }}
+                  sx={{
+                    flexShrink: 0,
+                    minWidth: 64,
+                    px: 1.5,
+                    py: 1,
+                    borderRadius: 3,
+                    cursor: "pointer",
+                    fontFamily: "inherit",
+                    textAlign: "center",
+                    transition: "all .15s ease",
+                    border: active ? "1px solid #a78bfa" : "1px solid rgba(255,255,255,0.1)",
+                    background: active ? "linear-gradient(160deg, #7c3aed, #5b21b6)" : "rgba(255,255,255,0.03)",
+                    color: active ? "#fff" : "rgba(255,255,255,0.7)",
+                    boxShadow: active ? "0 6px 20px rgba(124,58,237,0.4)" : "none",
+                    "&:hover": { borderColor: "#a78bfa" },
+                  }}
+                >
+                  <Box sx={{ fontSize: "0.65rem", letterSpacing: 1.5, opacity: 0.8 }}>
+                    {dayjs(d).format("ddd").toUpperCase()}
+                  </Box>
+                  <Box sx={{ fontSize: "1.1rem", fontWeight: 700, lineHeight: 1.3 }}>{dayjs(d).format("DD")}</Box>
+                  <Box sx={{ fontSize: "0.65rem", opacity: 0.8 }}>{dayjs(d).format("MMM YYYY")}</Box>
+                </Box>
+              );
+            })}
+          </Box>
+
+          {/* Seat map */}
+          <Box
+            sx={{
+              borderRadius: 3,
+              border: "1px solid rgba(255,255,255,0.06)",
+              bgcolor: "rgba(0,0,0,0.25)",
+              px: 2,
+              pt: 3,
+              pb: 2.5,
+              overflowX: "auto",
+            }}
+          >
+            {/* Stage / screen */}
+            <Box sx={{ maxWidth: 420, mx: "auto", mb: 4, textAlign: "center" }}>
+              <Box
+                sx={{
+                  height: 18,
+                  borderTop: "3px solid #a78bfa",
+                  borderRadius: "50% 50% 0 0 / 100% 100% 0 0",
+                  boxShadow: "0 -10px 30px -6px rgba(167,139,250,0.55)",
+                }}
+              />
+              <Typography sx={{ fontSize: "0.65rem", letterSpacing: 6, color: "rgba(196,181,253,0.6)" }}>
+                STAGE
+              </Typography>
+            </Box>
+
+            <Box sx={{ display: "flex", flexDirection: "column", gap: 0.9, width: "max-content", mx: "auto" }}>
+              {renderSeats()}
+            </Box>
+
+            {/* Legend */}
+            <Box sx={{ display: "flex", gap: 3, justifyContent: "center", mt: 3, flexWrap: "wrap" }}>
+              {[
+                { label: "Available", sx: { bgcolor: "rgba(139,92,246,0.08)", border: "1px solid rgba(167,139,250,0.45)" } },
+                { label: "Selected", sx: { background: "linear-gradient(180deg, #fcd34d, #f59e0b)" } },
+                { label: "Booked", sx: { bgcolor: "rgba(255,255,255,0.06)" } },
+              ].map(item => (
+                <Box key={item.label} sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+                  <Box sx={{ width: 16, height: 14, borderRadius: "5px 5px 3px 3px", ...item.sx }} />
+                  <Typography sx={{ fontSize: "0.75rem", color: "rgba(255,255,255,0.6)" }}>{item.label}</Typography>
+                </Box>
               ))}
-            </Select>
-          </FormControl>
-          
-          <Box sx={{ mb: 2 }}>
-            <Box sx={{ display: "flex", gap: 2, mb: 2, flexWrap: "wrap" }}>
-              <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-                <Box sx={{ width: 20, height: 20, bgcolor: "green", borderRadius: 1 }} />
-                <Typography variant="body2">Available</Typography>
-              </Box>
-              <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-                <Box sx={{ width: 20, height: 20, bgcolor: "orange", borderRadius: 1 }} />
-                <Typography variant="body2">Selected</Typography>
-              </Box>
-              <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-                <Box sx={{ width: 20, height: 20, bgcolor: "red", borderRadius: 1 }} />
-                <Typography variant="body2">Booked</Typography>
-              </Box>
             </Box>
           </Box>
 
-          <Box sx={{ bgcolor: "#f5f5f5", p: 2, borderRadius: 2 }}>
-            {renderSeats()}
-          </Box>
-          
-          <Typography variant="body2" sx={{ mt: 2, fontWeight: "bold" }}>
-            Selected: {selectedSeats.join(", ") || "None"}
+          <Typography sx={{ fontSize: "0.75rem", color: "rgba(255,255,255,0.45)", mt: 1.5, textAlign: "center" }}>
+            {seatsLeft} seats left for {dayjs(selectedDate).format("DD MMM YYYY")}
           </Typography>
         </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setBookDialogOpen(false)}>Cancel</Button>
-            <Button variant="contained" onClick={handleBooking} disabled={selectedSeats.length === 0}>
-     Proceed to Checkout
-   </Button>
+
+        {/* Summary bar */}
+        <DialogActions
+          sx={{
+            px: { xs: 2.5, sm: 4 },
+            py: 2.5,
+            borderTop: "1px solid rgba(255,255,255,0.08)",
+            bgcolor: "rgba(0,0,0,0.25)",
+            display: "flex",
+            flexWrap: "wrap",
+            gap: 2,
+            justifyContent: "space-between",
+          }}
+        >
+          <Box sx={{ minWidth: 0, flex: "1 1 240px" }}>
+            <Typography sx={{ fontSize: "0.7rem", letterSpacing: 2, color: "rgba(255,255,255,0.5)" }}>
+              {selectedSeats.length ? `${selectedSeats.length} SEAT${selectedSeats.length > 1 ? "S" : ""} SELECTED` : "NO SEATS SELECTED"}
+            </Typography>
+            <Box sx={{ display: "flex", gap: 0.75, flexWrap: "wrap", mt: 0.75, minHeight: 24 }}>
+              {selectedSeats.length === 0 ? (
+                <Typography sx={{ fontSize: "0.85rem", color: "rgba(255,255,255,0.35)" }}>
+                  Tap a seat to select it
+                </Typography>
+              ) : (
+                selectedSeats.map(s => (
+                  <Box
+                    key={s}
+                    sx={{
+                      px: 1,
+                      py: 0.25,
+                      borderRadius: 1.5,
+                      fontSize: "0.75rem",
+                      fontWeight: 700,
+                      color: "#fcd34d",
+                      border: "1px solid rgba(252,211,77,0.4)",
+                      bgcolor: "rgba(252,211,77,0.08)",
+                    }}
+                  >
+                    {s}
+                  </Box>
+                ))
+              )}
+            </Box>
+          </Box>
+
+          <Box sx={{ display: "flex", alignItems: "center", gap: 2, ml: "auto" }}>
+            <Box sx={{ textAlign: "right" }}>
+              <Typography sx={{ fontSize: "0.7rem", letterSpacing: 2, color: "rgba(255,255,255,0.5)" }}>TOTAL</Typography>
+              <Typography sx={{ fontSize: "1.35rem", fontWeight: 700 }}>₹{totalPrice.toLocaleString("en-IN")}</Typography>
+            </Box>
+            <Button onClick={() => setBookDialogOpen(false)} sx={{ color: "rgba(255,255,255,0.6)", textTransform: "none" }}>
+              Cancel
+            </Button>
+            <Button
+              variant="contained"
+              onClick={handleBooking}
+              disabled={selectedSeats.length === 0}
+              sx={{
+                textTransform: "none",
+                fontWeight: 700,
+                px: 3,
+                py: 1.25,
+                borderRadius: 2.5,
+                background: "linear-gradient(135deg, #8b5cf6, #6d28d9)",
+                boxShadow: "0 8px 24px rgba(124,58,237,0.45)",
+                "&:hover": { background: "linear-gradient(135deg, #a78bfa, #7c3aed)" },
+                "&.Mui-disabled": { background: "rgba(255,255,255,0.08)", color: "rgba(255,255,255,0.3)", boxShadow: "none" },
+              }}
+            >
+              Proceed to Checkout
+            </Button>
+          </Box>
         </DialogActions>
       </Dialog>
     </>

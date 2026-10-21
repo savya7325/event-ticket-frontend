@@ -1,6 +1,7 @@
 
 "use client";
 
+import { Suspense } from "react";
 import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import EventHeader from "./EventHeader";
@@ -8,11 +9,17 @@ import EventCard from "./EventCard";
 import { Drawer, Box, TextField, Typography, Button } from "@mui/material";
 import ClientDatePicker from "./ClientDatePicker";
 import dayjs, { Dayjs } from "dayjs";
-import {jwtDecode} from "jwt-decode";
-import Link from "next/link";
+import { useAuth } from "../context/AuthContext";
 import Pagination from "@mui/material/Pagination";
 import Stack from "@mui/material/Stack";
 import EventForm from "./EventForm";
+import UserNavbar from "../components/UserNavbar";
+import { primaryButtonSx, ui } from "../components/theme";
+import AddRoundedIcon from "@mui/icons-material/AddRounded";
+import { FullPageLoader } from "../components/UserShell";
+import { CardSkeleton } from "../components/ui";
+import { useToast } from "../components/ToastProvider";
+import { eventImageUrl } from "../components/userApi";
 
 
 
@@ -29,20 +36,17 @@ interface Event {
   bookedSeats?: Record<string, string[]>;
 }
 
-interface DecodedToken {
-  id: string;
-  role: "user" | "admin";
-  exp: number;
-}
-
-export default function Events() {
+function EventsContent() {
  const API_URL = process.env.NEXT_PUBLIC_API_URL;
   const router = useRouter();
   const searchParams = useSearchParams();
 
   const [events, setEvents] = useState<Event[]>([]);
   const [loading, setLoading] = useState(true);
-  const [role, setRole] = useState<"user" | "admin">("user");
+  const { user, isAdmin, loading: authLoading, loggedOutByUser } = useAuth();
+  const toast = useToast();
+  // UI mode for this page; the role itself comes from AuthContext (1 = admin, 2 = user).
+  const role: "user" | "admin" = isAdmin ? "admin" : "user";
 
   const [filters, setFilters] = useState({ location: "", maxPrice: "", date: "" });
   const [addDrawerOpen, setAddDrawerOpen] = useState(false);
@@ -56,19 +60,6 @@ export default function Events() {
     image: null as File | null,
   });
   const [newDate, setNewDate] = useState<Dayjs | null>(null);
-
-  // Fetch user role
-  useEffect(() => {
-    const userStr = localStorage.getItem("user");
-    if (userStr) {
-      try {
-        const decoded = jwtDecode(JSON.parse(userStr).token) as DecodedToken;
-        setRole(decoded.role);
-      } catch (err) {
-        console.error("Invalid token", err);
-      }
-    }
-  }, []);
 
   // Fetch events
   const fetchEvents = async (appliedFilters?: Partial<typeof filters>) => {
@@ -193,107 +184,77 @@ const currentEvents = events.slice(indexOfFirstEvent, indexOfLastEvent);
 
 const handlePageChange = (event: React.ChangeEvent<unknown>, value: number) => {
   setCurrentPage(value);
-  window.scrollTo({ top: 0, behavior: "smooth" }); 
+  window.scrollTo({ top: 0, behavior: "smooth" });
 };
+
+  // Booking needs an account, so send signed-out visitors to login first.
+  useEffect(() => {
+    if (!authLoading && !user) router.replace(loggedOutByUser ? "/" : "/?next=/events");
+  }, [authLoading, user, loggedOutByUser, router]);
+
+  // Don't render the user UI before we know whether this is an admin.
+  if (authLoading || !user) return <FullPageLoader />;
 
   return (
     <div
       style={{
         minHeight: "100vh",
-        background:
-          "linear-gradient(135deg, #2b0f35 0%, #31212f 50%, #0d0d0d 100%)",
+        background: ui.pageBg,
         color: "white",
       }}
     >
-      <nav
-        style={{
-          background: "linear-gradient(90deg, #2c003e, #3d0075)",
-          color: "white",
-          padding: "15px 30px",
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          position: "sticky",
-          top: 0,
-          zIndex: 1000,
-        }}
-      >
-        <h2 style={{ margin: 0, fontSize: "24px", fontWeight: "bold" }}>
-          Evenza
-        </h2>
-        <ul
-          style={{
-            display: "flex",
-            listStyle: "none",
-            gap: "20px",
-            margin: 0,
-          }}
-        >
-          {/* <li style={{ cursor: "pointer" }} onClick={() => router.push("/")}>
-            Home
-          </li> */}
-          {role === "admin" && (
-            <li
-              style={{ cursor: "pointer" }}
-              onClick={() => router.push("/admin/bookings")}
-            >
-              Bookings
-            </li>
-          )}
-
-          {role === "user" && (
-            <>
-              <li
-                style={{ cursor: "pointer" }}
-                onClick={() => router.push("/profile")}
-              >
-                Profile
-              </li>
-              <li
-                style={{ cursor: "pointer" }}
-                onClick={() => router.push("/mybookings")}
-              >
-                My Bookings
-              </li>
-            </>
-          )}
-          <Link href="/" style={{}}>
-            Logout
-          </Link>
-        </ul>
-      </nav>
+      <UserNavbar />
 
       <EventHeader title="Upcoming Events" />
 
       {role === "admin" && (
         <>   
-<Button
-  variant="contained"
-  sx={{ bgcolor: "#6a11cb", color: "white", fontWeight: "bold", marginLeft: "700px", marginBottom: "20px", marginTop: "20px" }}
-  onClick={() => setAddDrawerOpen(true)} // ← Open drawer instead
->
-  Add Event
-</Button>
-<Drawer
-  anchor="right"
-  open={addDrawerOpen}
-  onClose={() => setAddDrawerOpen(false)}
-  PaperProps={{ sx: { width: 450, p: 4, bgcolor: "#f5f5f5" } }}
->
-  <Box sx={{ display: "flex", flexDirection: "column", gap: 3 }}>
-    {/* <Typography variant="h5" fontWeight="bold" color="primary">
-      Add New Event
-    </Typography> */}
-
-    <EventForm
-      compact // <-- important!
-      onSuccess={() => {
-        setAddDrawerOpen(false);
-        fetchEvents();
-      }}
-    />
-  </Box>
-</Drawer>
+          {/* Title lines up with the card grid's left edge; button sits in the centre */}
+          <Box
+            sx={{
+              display: "grid",
+              gridTemplateColumns: { xs: "1fr", md: "1fr auto 1fr" },
+              alignItems: "center",
+              justifyItems: { xs: "center", md: "start" },
+              gap: 2,
+              px: { xs: "20px", md: "40px" },
+              pt: 4,
+            }}
+          >
+            <Box>
+              {/* <Typography sx={{ fontSize: "0.7rem", fontWeight: 600, letterSpacing: 2.5, color: ui.accentSoft }}>ADMIN</Typography> */}
+              <Typography sx={{ fontWeight: 800, fontSize: "1.4rem" }}>Manage events</Typography>
+            </Box>
+            <Button startIcon={<AddRoundedIcon />} onClick={() => setAddDrawerOpen(true)} sx={{ ...primaryButtonSx, justifySelf: "center" }}>
+              Add event
+            </Button>
+          </Box>
+          <Drawer
+            anchor="right"
+            open={addDrawerOpen}
+            onClose={() => setAddDrawerOpen(false)}
+            slotProps={{
+              paper: {
+                sx: {
+                  width: { xs: "100%", sm: 500 },
+                  bgcolor: "#120e1a",
+                  backgroundImage: "none",
+                  borderLeft: `1px solid ${ui.border}`,
+                  boxShadow: "-30px 0 80px rgba(0,0,0,0.5)",
+                },
+              },
+              backdrop: { sx: { bgcolor: "rgba(5,3,10,0.6)", backdropFilter: "blur(4px)" } },
+            }}
+          >
+            <EventForm
+              compact
+              onClose={() => setAddDrawerOpen(false)}
+              onSuccess={() => {
+                setAddDrawerOpen(false);
+                fetchEvents();
+              }}
+            />
+          </Drawer>
 
 {/* <Drawer
   anchor="right"
@@ -419,8 +380,21 @@ const handlePageChange = (event: React.ChangeEvent<unknown>, value: number) => {
         </>
       )}
 
-      {events.length === 0 ? (
-        <p>No events found.</p>
+      {loading ? (
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))",
+            gap: "20px",
+            padding: "40px",
+          }}
+        >
+          {Array.from({ length: 4 }, (_, i) => (
+            <CardSkeleton key={i} height={420} />
+          ))}
+        </div>
+      ) : events.length === 0 ? (
+        <p style={{ textAlign: "center", padding: "60px 20px", color: ui.muted }}>No events found.</p>
       ) : (
         <>
           <div
@@ -447,25 +421,30 @@ const handlePageChange = (event: React.ChangeEvent<unknown>, value: number) => {
                       headers: { Authorization: `Bearer ${token}` },
                       body: data,
                     });
-                    if (!res.ok) throw new Error("Failed to update event");
-                    const updatedEvent: Event = await res.json();
-                    updatedEvent.dates =
-                      updatedEvent.dates?.map((d) => new Date(d).toISOString()) || [];
-                    updatedEvent.seatsPerDate = updatedEvent.seatsPerDate || {};
-                    updatedEvent.bookedSeats = updatedEvent.bookedSeats || {};
-                    if (
-                      updatedEvent.image &&
-                      !updatedEvent.image.startsWith("http")
-                    )
-                      updatedEvent.image = `${API_URL}/uploads/${updatedEvent.image}`;
+                    if (!res.ok) {
+                      const errData = await res.json().catch(() => ({}));
+                      throw new Error(errData.message || "Please try again.");
+                    }
+                    const raw: Event = await res.json();
+                    // Same shape as fetchEvents, so the card can show the new image right away.
+                    const updatedEvent: Event = {
+                      ...raw,
+                      dates: raw.dates?.map((d) => new Date(d).toISOString()) || [],
+                      seatsPerDate: raw.seatsPerDate || {},
+                      bookedSeats: raw.bookedSeats || {},
+                      image: eventImageUrl(raw.image),
+                    };
                     setEvents((prev) =>
                       prev.map((e) =>
                         e._id === updatedEvent._id ? updatedEvent : e
                       )
                     );
-                  } catch (err) {
+                    toast.success("Event updated successfully", `"${updatedEvent.title}" has been saved.`);
+                    return updatedEvent;
+                  } catch (err: any) {
                     console.error(err);
-                    alert("Failed to update event");
+                    toast.error("Couldn't update event", err.message);
+                    return null;
                   }
                 }}
                 onDelete={async (id) => {
@@ -478,9 +457,10 @@ const handlePageChange = (event: React.ChangeEvent<unknown>, value: number) => {
                     });
                     if (!res.ok) throw new Error("Failed to delete event");
                     setEvents((prev) => prev.filter((e) => e._id !== id));
+                    toast.success("Event deleted", `"${event.title}" has been removed.`);
                   } catch (err) {
                     console.error(err);
-                    alert("Failed to delete event");
+                    toast.error("Couldn't delete event", "Please try again.");
                   }
                 }}
               />
@@ -513,4 +493,11 @@ const handlePageChange = (event: React.ChangeEvent<unknown>, value: number) => {
   );
 }
 
-
+// useSearchParams needs a Suspense boundary for production builds.
+export default function Events() {
+  return (
+    <Suspense fallback={<FullPageLoader />}>
+      <EventsContent />
+    </Suspense>
+  );
+}

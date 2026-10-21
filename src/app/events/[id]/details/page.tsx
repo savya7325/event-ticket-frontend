@@ -159,7 +159,7 @@ export default function EventDetailsPage() {
             lineHeight: "1.9",
             marginBottom: "20px"
           }}>
-            ✨ Join us for an unforgettable evening filled with incredible performances, stunning visuals, and an electric atmosphere that will leave you mesmerized. This is more than just a concert—it's an experience that celebrates the power of live music and the magic of being part of something extraordinary.
+            ✨ Join us for an unforgettable evening filled with incredible performances, stunning visuals, and an electric atmosphere that will leave you mesmerized. This is more than just a concert—it&apos;s an experience that celebrates the power of live music and the magic of being part of something extraordinary.
           </p>
 
          
@@ -170,7 +170,7 @@ export default function EventDetailsPage() {
             fontSize: "1.1rem",
             lineHeight: "1.9"
           }}>
-            Don't miss this opportunity to be part of something spectacular. Join us for a night where music comes alive!
+            Don&apos;t miss this opportunity to be part of something spectacular. Join us for a night where music comes alive!
           </p>
         </div>
 

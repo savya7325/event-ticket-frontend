@@ -25,11 +25,13 @@
 
 "use client";
 
+import { Suspense } from "react";
+import { FullPageLoader } from "../components/UserShell";
 import { useSearchParams, useRouter } from "next/navigation";
 import { Box, Typography, Button } from "@mui/material";
 import { useEffect, useState } from "react";
 
-export default function SuccessPage() {
+function SuccessPageContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
 
@@ -96,5 +98,14 @@ export default function SuccessPage() {
         </Button>
       </Box>
     </Box>
+  );
+}
+
+// useSearchParams needs a Suspense boundary for production builds.
+export default function SuccessPage() {
+  return (
+    <Suspense fallback={<FullPageLoader />}>
+      <SuccessPageContent />
+    </Suspense>
   );
 }

@@ -1,5 +1,6 @@
 "use client";
 
+import { capacityOf, seatsLeftOn } from "../components/seats";
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import {
@@ -108,10 +109,10 @@ setSelectedDate(prev => prev || data.dates[0] || "");
   );
 };
   const renderSeats = () => {
-    if (!event || !event.ticketsAvailable) return null;
+    if (!event) return null;
 
-    const { rows, seatsPerRow } = calculateSeatLayout(event.ticketsAvailable);
-    const totalSeats = event.ticketsAvailable;
+    const { rows, seatsPerRow } = calculateSeatLayout(capacityOf(event));
+    const totalSeats = capacityOf(event);
     let seatCount = 0;
 
     return rows.map(row => {
@@ -211,7 +212,7 @@ setSelectedDate(prev => prev || data.dates[0] || "");
 
       <Typography sx={{ mt: 2, mb: 2, fontWeight: "bold" }}>
         Selected: {selectedSeats.join(", ") || "None"} | 
-        Available: {event.seatsPerDate?.[selectedDate] || 0} / {event.ticketsAvailable || 0}
+        Available: {selectedDate ? seatsLeftOn(event, selectedDate) : 0} / {capacityOf(event)}
       </Typography>
 
    <Button 

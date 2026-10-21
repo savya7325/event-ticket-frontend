@@ -180,6 +180,8 @@
 
 "use client";
 
+import { Suspense } from "react";
+import { FullPageLoader } from "../../../components/UserShell";
 import { useSearchParams, useRouter, useParams } from "next/navigation";
 import { useState } from "react";
 import {
@@ -199,7 +201,7 @@ import {
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL;
 
-export default function CheckoutPage() {
+function CheckoutPageContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const params = useParams();
@@ -357,5 +359,14 @@ export default function CheckoutPage() {
         </Alert>
       </Snackbar>
     </Box>
+  );
+}
+
+// useSearchParams needs a Suspense boundary for production builds.
+export default function CheckoutPage() {
+  return (
+    <Suspense fallback={<FullPageLoader />}>
+      <CheckoutPageContent />
+    </Suspense>
   );
 }
