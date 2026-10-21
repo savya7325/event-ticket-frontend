@@ -11,6 +11,8 @@ import CelebrationRoundedIcon from "@mui/icons-material/CelebrationRounded";
 import ChevronLeftRoundedIcon from "@mui/icons-material/ChevronLeftRounded";
 import ChevronRightRoundedIcon from "@mui/icons-material/ChevronRightRounded";
 import ErrorOutlineRoundedIcon from "@mui/icons-material/ErrorOutlineRounded";
+import ConfirmationNumberRoundedIcon from "@mui/icons-material/ConfirmationNumberRounded";
+import AdminPanelSettingsRoundedIcon from "@mui/icons-material/AdminPanelSettingsRounded";
 import { useAuth } from "./context/AuthContext";
 import { homePathFor } from "./auth/roles";
 import PublicNavbar from "./components/PublicNavbar";
@@ -40,6 +42,12 @@ const PERKS = [
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+// Public demo logins so visitors (and recruiters) can try both sides of the app.
+const DEMO_ACCOUNTS = [
+  { key: "user", label: "Demo user", hint: "Browse & book", email: "savyaak07+demouser@gmail.com", password: "Demo@1234", icon: <ConfirmationNumberRoundedIcon /> },
+  { key: "admin", label: "Demo admin", hint: "Dashboard & events", email: "savyaak07+demoadmin@gmail.com", password: "Demo@1234", icon: <AdminPanelSettingsRoundedIcon /> },
+] as const;
+
 export default function Home() {
   const { user, loading, login, register } = useAuth();
   const router = useRouter();
@@ -51,6 +59,7 @@ export default function Home() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [touched, setTouched] = useState(false);
+  const [demoLoading, setDemoLoading] = useState<string | null>(null);
   const [currentVideo, setCurrentVideo] = useState(0);
   const railRef = useRef<HTMLDivElement | null>(null);
 
@@ -88,6 +97,25 @@ export default function Home() {
     setIsRegister(register);
     setError("");
     setTouched(false);
+  };
+
+  // One-click login with a demo account.
+  const loginAsDemo = async (account: (typeof DEMO_ACCOUNTS)[number]) => {
+    if (submitting) return;
+    setIsRegister(false);
+    setTouched(false);
+    setError("");
+    setFormData({ username: "", email: account.email, password: account.password });
+    setDemoLoading(account.key);
+    setSubmitting(true);
+    try {
+      const loggedIn = await login({ email: account.email, password: account.password });
+      router.push(destinationFor(loggedIn));
+    } catch (err: any) {
+      setError(err.response?.data?.message || err.message || "Demo login failed. Please try again.");
+      setSubmitting(false);
+      setDemoLoading(null);
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -283,8 +311,59 @@ export default function Home() {
               )}
 
               <Button type="submit" disabled={submitting} fullWidth sx={{ ...primaryButtonSx, py: 1.4, fontSize: "1rem", "&.Mui-disabled": { color: "rgba(255,255,255,0.75)", opacity: 0.8 } }}>
-                {submitting ? <CircularProgress size={22} sx={{ color: "#fff" }} /> : isRegister ? "Create account" : "Log in"}
+                {submitting && !demoLoading ? <CircularProgress size={22} sx={{ color: "#fff" }} /> : isRegister ? "Create account" : "Log in"}
               </Button>
+
+              {/* Demo logins */}
+              <Box sx={{ display: "flex", alignItems: "center", gap: 1.5, my: 2.5, color: ui.faint, fontSize: "0.72rem", fontWeight: 600, letterSpacing: 1.5 }}>
+                <Box sx={{ flex: 1, height: "1px", bgcolor: ui.border }} />
+                OR TRY A DEMO
+                <Box sx={{ flex: 1, height: "1px", bgcolor: ui.border }} />
+              </Box>
+              <Box sx={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,1fr)", gap: 1.25 }}>
+                {DEMO_ACCOUNTS.map(a => (
+                  <ButtonBase
+                    key={a.key}
+                    type="button"
+                    disabled={submitting}
+                    onClick={() => loginAsDemo(a)}
+                    aria-label={`Log in as ${a.label.toLowerCase()}`}
+                    sx={{
+                      gap: 1.25,
+                      p: 1.25,
+                      borderRadius: 3,
+                      justifyContent: "flex-start",
+                      textAlign: "left",
+                      color: ui.text,
+                      border: `1px solid ${ui.border}`,
+                      bgcolor: "rgba(255,255,255,0.03)",
+                      transition: "all .15s ease",
+                      "&:hover": { borderColor: "rgba(167,139,250,0.5)", bgcolor: "rgba(139,92,246,0.08)" },
+                      "&.Mui-disabled": { opacity: 0.6 },
+                    }}
+                  >
+                    <Box
+                      sx={{
+                        width: 34,
+                        height: 34,
+                        flexShrink: 0,
+                        borderRadius: 2,
+                        display: "grid",
+                        placeItems: "center",
+                        color: a.key === "admin" ? ui.gold : ui.accentSoft,
+                        bgcolor: a.key === "admin" ? "rgba(252,211,77,0.12)" : "rgba(139,92,246,0.16)",
+                        "& svg": { fontSize: 19 },
+                      }}
+                    >
+                      {demoLoading === a.key ? <CircularProgress size={16} sx={{ color: "inherit" }} /> : a.icon}
+                    </Box>
+                    <Box sx={{ minWidth: 0 }}>
+                      <Box sx={{ fontWeight: 700, fontSize: "0.85rem" }}>{a.label}</Box>
+                      <Box sx={{ fontSize: "0.72rem", color: ui.faint, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{a.hint}</Box>
+                    </Box>
+                  </ButtonBase>
+                ))}
+              </Box>
 
               <Typography sx={{ textAlign: "center", fontSize: "0.88rem", color: ui.muted, mt: 2.5 }}>
                 {isRegister ? "Already have an account?" : "New to Evenza?"}{" "}
