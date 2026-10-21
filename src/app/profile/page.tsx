@@ -1,412 +1,406 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
 import {
-  Box,
-  Typography,
-  Paper,
-  Divider,
-  Button,
-  Avatar,
-  IconButton,
-  Stack,
-  TextField,
-  CircularProgress,
-  Snackbar,
   Alert,
+  Avatar,
+  Box,
+  Button,
+  CircularProgress,
+  IconButton,
+  Snackbar,
+  TextField,
+  Typography,
 } from "@mui/material";
-import CameraAltIcon from "@mui/icons-material/CameraAlt";
-import DeleteIcon from "@mui/icons-material/Delete";
-import EditIcon from "@mui/icons-material/Edit";
+import PhotoCameraRoundedIcon from "@mui/icons-material/PhotoCameraRounded";
+import EditRoundedIcon from "@mui/icons-material/EditRounded";
+import MailOutlineRoundedIcon from "@mui/icons-material/MailOutlineRounded";
+import BadgeRoundedIcon from "@mui/icons-material/BadgeRounded";
+import CalendarTodayRoundedIcon from "@mui/icons-material/CalendarTodayRounded";
+import ConfirmationNumberRoundedIcon from "@mui/icons-material/ConfirmationNumberRounded";
+import EventSeatRoundedIcon from "@mui/icons-material/EventSeatRounded";
+import CurrencyRupeeRoundedIcon from "@mui/icons-material/CurrencyRupeeRounded";
+import LogoutRoundedIcon from "@mui/icons-material/LogoutRounded";
+import { useRouter } from "next/navigation";
+import UserShell, { useExpireSession } from "../components/UserShell";
+import { initialsOf } from "../components/UserNavbar";
+import ConfirmDialog from "../components/ConfirmDialog";
+import { useAuth } from "../context/AuthContext";
+import { useMyBookings } from "../components/useMyBookings";
+import { CardSkeleton, ErrorState, StatCard } from "../components/ui";
+import {
+  AuthError,
+  Profile,
+  avatarUrlOf,
+  bookingTotal,
+  formatINR,
+  getProfile,
+  removeAvatar,
+  updateUsername,
+  uploadAvatar,
+} from "../components/userApi";
+import { cardSx, eyebrowSx, ghostButtonSx, primaryButtonSx, ui } from "../components/theme";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL;
+type Snack = { severity: "success" | "error" | "info"; msg: string } | null;
 
-interface User {
-  _id: string;
-  username: string;
-  email: string;
-  role: "user" | "admin";
-  avatarUrl?: string | null;
-}
+const fieldSx = {
+  "& .MuiOutlinedInput-root": {
+    color: ui.text,
+    borderRadius: 2.5,
+    bgcolor: "rgba(0,0,0,0.2)",
+    "& fieldset": { borderColor: ui.border },
+    "&:hover fieldset": { borderColor: "rgba(167,139,250,0.5)" },
+    "&.Mui-focused fieldset": { borderColor: ui.accent },
+  },
+};
 
-
-export default function ProfilePage() {
+function ProfileContent() {
+  const { user, isAdmin, logout, updateUser } = useAuth();
   const router = useRouter();
+  const expireSession = useExpireSession();
   const fileRef = useRef<HTMLInputElement | null>(null);
-  const [mounted, setMounted] = useState(false);
-  const [user, setUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState<boolean>(true);
-  const [uploading, setUploading] = useState<boolean>(false);
+  const { bookings, loading: bookingsLoading } = useMyBookings();
+
+  const [profile, setProfile] = useState<Profile | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [avatarUrl, setAvatarUrl] = useState<string | undefined>();
   const [preview, setPreview] = useState<string | null>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [snack, setSnack] = useState<{ open: boolean; severity: "success" | "error" | "info"; msg: string }>({
-    open: false,
-    severity: "info",
-    msg: "",
-  });
-  const [editingName, setEditingName] = useState<boolean>(false);
-  const [nameInput, setNameInput] = useState<string>("");
+  const [busy, setBusy] = useState(false);
+  const [editingName, setEditingName] = useState(false);
+  const [nameInput, setNameInput] = useState("");
+  const [snack, setSnack] = useState<Snack>(null);
+  const [confirmLogout, setConfirmLogout] = useState(false);
 
-  
+  const token = user?.token ?? "";
 
-  // === Fetch profile on mount ===
-    useEffect(() => {
-  setMounted(true);
-}, []);
+  const fail = (err: unknown, fallback: string) => {
+    if (err instanceof AuthError) return expireSession();
+    setSnack({ severity: "error", msg: err instanceof Error ? err.message : fallback });
+  };
 
-useEffect(() => {
-  if (!mounted) return;
-    const userStr = localStorage.getItem("user");
-    if (!userStr) {
-      router.push("/");
-      return;
-    }
-    const token = JSON.parse(userStr).token;
-
-    fetch(`${API_URL}/api/users/profile`, {
-      headers: { Authorization: `Bearer ${token}` },
-    })
-      .then(async (res) => {
-        if (!res.ok) {
-          throw new Error("Failed to fetch profile");
-        }
-        const data = await res.json();
-        setUser(data.user);
-        setNameInput(data.user?.username ?? "");
+  const loadProfile = () => {
+    setError(null);
+    getProfile(token)
+      .then(p => {
+        setProfile(p);
+        setNameInput(p.username);
+        setAvatarUrl(avatarUrlOf(p.avatar));
       })
-      .catch((err) => {
-        console.error(err);
-        router.push("/");
-      })
-      .finally(() => setLoading(false));
-  }, [router]);
+      .catch(err => (err instanceof AuthError ? expireSession() : setError(err.message)));
+  };
 
-  // cleanup object URL when selected file changes/unmount
   useEffect(() => {
-    return () => {
-      if (preview) URL.revokeObjectURL(preview);
-    };
+    if (token) loadProfile();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token]);
+
+  useEffect(() => () => {
+    if (preview) URL.revokeObjectURL(preview);
   }, [preview]);
 
-  // === Helpers for showing snackbars ===
-  const showSnack = (severity: "success" | "error" | "info", msg: string) => {
-    setSnack({ open: true, severity, msg });
-  };
-  const closeSnack = () => setSnack((s) => ({ ...s, open: false }));
-
-  // === File select handler (from hidden input) ===
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0] ?? null;
+    const file = e.target.files?.[0];
+    e.target.value = "";
     if (!file) return;
-    // Basic client-side validation (image type & size example: < 5MB)
-    if (!file.type.startsWith("image/")) {
-      showSnack("error", "Please select an image file.");
-      return;
-    }
-    if (file.size > 5 * 1024 * 1024) {
-      showSnack("error", "Please select an image smaller than 5MB.");
-      return;
-    }
+    if (!file.type.startsWith("image/")) return setSnack({ severity: "error", msg: "Please choose an image file." });
+    if (file.size > 5 * 1024 * 1024) return setSnack({ severity: "error", msg: "Image must be smaller than 5 MB." });
     setSelectedFile(file);
-    const url = URL.createObjectURL(file);
-    setPreview(url);
+    setPreview(URL.createObjectURL(file));
   };
 
-  // === Upload file to backend (multer endpoint) ===
+  const cancelPreview = () => {
+    setSelectedFile(null);
+    setPreview(null);
+  };
+
   const handleUpload = async () => {
-    if (!selectedFile) {
-      showSnack("info", "Choose an image first.");
-      return;
-    }
-    const userStr = localStorage.getItem("user");
-    if (!userStr) {
-      router.push("/");
-      return;
-    }
-    const token = JSON.parse(userStr).token;
-
-    const formData = new FormData();
-    formData.append("avatar", selectedFile);
-
+    if (!selectedFile) return;
+    setBusy(true);
     try {
-      setUploading(true);
-      const res = await fetch(`${API_URL}/api/users/profile/avatar`, {
-        method: "PUT", 
-        headers: { Authorization: `Bearer ${token}` },
-        body: formData,
-      });
-
-
-      if (!res.ok) {
-        const errText = await res.text();
-        throw new Error(errText || "Upload failed");
-      }
-
-      const data = await res.json();
-      // Expecting backend to return updated user or avatar URL
-      setUser((u) => (u ? { ...u, avatarUrl: data.avatarUrl ?? data.user?.avatarUrl ?? u.avatarUrl } : u));
-      setSelectedFile(null);
-      if (preview) {
-        URL.revokeObjectURL(preview);
-        setPreview(null);
-      }
-      showSnack("success", "Profile photo updated.");
-    } catch (err: any) {
-      console.error(err);
-      showSnack("error", err?.message ?? "Upload failed.");
+      const data = await uploadAvatar(token, selectedFile);
+      setAvatarUrl(data.avatarUrl);
+      cancelPreview();
+      setSnack({ severity: "success", msg: "Profile photo updated." });
+    } catch (err) {
+      fail(err, "Upload failed.");
     } finally {
-      setUploading(false);
+      setBusy(false);
     }
   };
 
-  // === Remove profile photo (ask backend to remove or just clear) ===
   const handleRemovePhoto = async () => {
-    const userStr = localStorage.getItem("user");
-    if (!userStr) {
-      router.push("/");
-      return;
-    }
-    const token = JSON.parse(userStr).token;
-
+    setBusy(true);
     try {
-      setUploading(true);
-      const API_URL = process.env.NEXT_PUBLIC_API_URL;
-      const res = await fetch(`${API_URL}/api/users/profile/avatar`, {
-        method: "DELETE",
-        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-      });
-      if (!res.ok) throw new Error("Could not remove avatar");
-      setUser((u) => (u ? { ...u, avatarUrl: null } : u));
-      showSnack("success", "Profile photo removed.");
+      await removeAvatar(token);
+      setAvatarUrl(undefined);
+      setSnack({ severity: "success", msg: "Profile photo removed." });
     } catch (err) {
-      console.error(err);
-      showSnack("error", "Failed to remove photo.");
+      fail(err, "Could not remove photo.");
     } finally {
-      setUploading(false);
+      setBusy(false);
     }
   };
 
-  // === Update display name example (PUT) ===
   const handleSaveName = async () => {
-    if (!nameInput.trim()) {
-      showSnack("error", "Name cannot be empty.");
-      return;
-    }
-    const userStr = localStorage.getItem("user");
-    if (!userStr) return;
-    const token = JSON.parse(userStr).token;
+    const username = nameInput.trim();
+    if (!username) return setSnack({ severity: "error", msg: "Name cannot be empty." });
+    setBusy(true);
     try {
-      setUploading(true);
-
-      const res = await fetch(`${API_URL}/api/users/profile`, {
-        method: "PUT",
-        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ name: nameInput }),
-      });
-
-      if (!res.ok) throw new Error("Failed to update name");
-      const data = await res.json();
-      setUser((u) => (u ? { ...u, username: data.user?.username ?? nameInput } : u));
-      const storedUser = JSON.parse(localStorage.getItem("user")!);
-      storedUser.username = data.user?.username ?? nameInput;
-      localStorage.setItem("user", JSON.stringify(storedUser));
-
+      const updated = await updateUsername(token, username);
+      setProfile(p => (p ? { ...p, username: updated.username } : p));
+      updateUser({ username: updated.username });
       setEditingName(false);
-      showSnack("success", "Name updated.");
+      setSnack({ severity: "success", msg: "Name updated." });
     } catch (err) {
-      console.error(err);
-      showSnack("error", "Could not update name.");
+      fail(err, "Could not update name.");
     } finally {
-      setUploading(false);
+      setBusy(false);
     }
   };
 
-  if (loading) {
+  if (error) return <ErrorState message={error} onRetry={loadProfile} />;
+
+  if (!profile) {
     return (
-      <Box sx={{ minHeight: "80vh", display: "flex", alignItems: "center", justifyContent: "center" }}>
-        <CircularProgress />
+      <Box sx={{ display: "grid", gap: 3 }}>
+        <CardSkeleton height={240} />
+        <CardSkeleton height={200} />
       </Box>
     );
   }
 
-  if (!user) {
-    return null; // already redirected in useEffect, but keep safe
-  }
-
-  const initials = user.username
-    .split(" ")
-    .map((p) => p[0])
-    .slice(0, 2)
-    .join("")
-    .toUpperCase();
+  const memberSince = profile.createdAt
+    ? new Date(profile.createdAt).toLocaleDateString("en-IN", { month: "long", year: "numeric" })
+    : null;
+  const totalSeats = bookings.reduce((n, b) => n + b.seats.length, 0);
+  const totalSpent = bookings.reduce((n, b) => n + bookingTotal(b), 0);
 
   return (
-    <Box
-      sx={{
-        minHeight: "100vh",
-        background: "linear-gradient(180deg,#071013 0%, #0b2436 60%)",
-        display: "flex",
-        justifyContent: "center",
-        alignItems: "center",
-        p: 3,
-      }}
-    >
-      <Paper
-        elevation={10}
-        sx={{
-          width: "100%",
-          maxWidth: 920,
-          borderRadius: 3,
-          p: { xs: 3, md: 5 },
-          color: "text.primary",
-        }}
-      >
-        <Stack direction={{ xs: "column", md: "row" }} spacing={4} alignItems="center">
-          {/* Left: Avatar / Upload */}
-          <Box sx={{ display: "flex", flexDirection: "column", alignItems: "center", width: { xs: "100%", md: 280 } }}>
-            <Box sx={{ position: "relative" }}>
-              <Avatar
-               src={
-                  preview ??
-                  (user.avatarUrl
-                    ? user.avatarUrl.startsWith("http")
-                      ? user.avatarUrl
-                      : `${API_URL}${user.avatarUrl}`
-                    : undefined)
-                }
-                alt={user.username}
-                sx={{ width: 160, height: 160, fontSize: 48, bgcolor: "#2e7d32" }}
-              >
-                {initials}
-              </Avatar>
-              <IconButton
-                aria-label="upload picture"
-                onClick={() => fileRef.current?.click()}
+    <>
+      {/* Identity card */}
+      <Box sx={{ ...cardSx, overflow: "hidden", mb: 3 }}>
+        <Box
+          sx={{
+            height: { xs: 110, md: 140 },
+            background:
+              "radial-gradient(500px 200px at 80% 0%, rgba(236,72,153,0.35), transparent 70%), linear-gradient(120deg, #4c1d95, #312e81 60%, #1e1b4b)",
+          }}
+        />
+        <Box
+          sx={{
+            px: { xs: 2.5, md: 4 },
+            pb: 3,
+            display: "flex",
+            flexDirection: { xs: "column", sm: "row" },
+            alignItems: { xs: "flex-start", sm: "flex-end" },
+            gap: { xs: 2, sm: 3 },
+            mt: { xs: -6, md: -7 },
+          }}
+        >
+          <Box sx={{ position: "relative" }}>
+            <Avatar
+              src={preview ?? avatarUrl}
+              alt={profile.username}
+              sx={{
+                width: { xs: 104, md: 124 },
+                height: { xs: 104, md: 124 },
+                fontSize: 40,
+                fontWeight: 800,
+                background: ui.gradient,
+                border: "4px solid #0d0a14",
+                boxShadow: "0 12px 30px rgba(0,0,0,0.45)",
+              }}
+            >
+              {initialsOf(profile.username)}
+            </Avatar>
+            <IconButton
+              aria-label="Change profile photo"
+              onClick={() => fileRef.current?.click()}
+              disabled={busy}
+              sx={{
+                position: "absolute",
+                right: 2,
+                bottom: 2,
+                width: 36,
+                height: 36,
+                color: "#fff",
+                background: ui.gradient,
+                border: "3px solid #0d0a14",
+                "&:hover": { background: "linear-gradient(135deg, #a78bfa, #7c3aed)" },
+              }}
+            >
+              <PhotoCameraRoundedIcon sx={{ fontSize: 17 }} />
+            </IconButton>
+            <input ref={fileRef} type="file" accept="image/*" hidden onChange={handleFileSelect} />
+          </Box>
+
+          <Box sx={{ flex: 1, minWidth: 0 }}>
+            <Typography sx={{ fontSize: { xs: "1.5rem", md: "1.8rem" }, fontWeight: 800, lineHeight: 1.2 }} noWrap>
+              {profile.username}
+            </Typography>
+            <Box sx={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 1.25, mt: 0.75 }}>
+              <Box
                 sx={{
-                  position: "absolute",
-                  bottom: 6,
-                  right: 6,
-                  bgcolor: "rgba(255,255,255,0.9)",
-                  "&:hover": { bgcolor: "rgba(255,255,255,0.95)" },
+                  px: 1.1,
+                  py: 0.25,
+                  borderRadius: 1.5,
+                  fontSize: "0.7rem",
+                  fontWeight: 700,
+                  letterSpacing: 0.5,
+                  color: isAdmin ? ui.gold : ui.accentSoft,
+                  bgcolor: isAdmin ? "rgba(252,211,77,0.12)" : "rgba(139,92,246,0.16)",
                 }}
-                size="large"
               >
-                <CameraAltIcon />
+                {isAdmin ? "ADMIN" : "MEMBER"}
+              </Box>
+              {memberSince && <Typography sx={{ fontSize: "0.82rem", color: ui.faint }}>Joined {memberSince}</Typography>}
+            </Box>
+          </Box>
+
+          <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap" }}>
+            {selectedFile ? (
+              <>
+                <Button onClick={handleUpload} disabled={busy} sx={primaryButtonSx}>
+                  {busy ? <CircularProgress size={18} sx={{ color: "#fff" }} /> : "Save photo"}
+                </Button>
+                <Button onClick={cancelPreview} disabled={busy} sx={ghostButtonSx}>
+                  Cancel
+                </Button>
+              </>
+            ) : (
+              avatarUrl && (
+                <Button onClick={handleRemovePhoto} disabled={busy} sx={{ ...ghostButtonSx, color: ui.danger }}>
+                  Remove photo
+                </Button>
+              )
+            )}
+          </Box>
+        </Box>
+      </Box>
+
+      {/* Stats (users only) */}
+      {!isAdmin && (
+        <Box sx={{ display: "grid", gridTemplateColumns: { xs: "minmax(0,1fr)", sm: "repeat(3, minmax(0,1fr))" }, gap: 2, mb: 3 }}>
+          {bookingsLoading ? (
+            Array.from({ length: 3 }, (_, i) => <CardSkeleton key={i} height={92} />)
+          ) : (
+            <>
+              <StatCard label="Bookings" value={bookings.length} icon={<ConfirmationNumberRoundedIcon />} />
+              <StatCard label="Seats booked" value={totalSeats} icon={<EventSeatRoundedIcon />} />
+              <StatCard label="Total spent" value={formatINR(totalSpent)} icon={<CurrencyRupeeRoundedIcon />} />
+            </>
+          )}
+        </Box>
+      )}
+
+      {/* Account details */}
+      <Box sx={{ ...cardSx, p: { xs: 2.5, md: 4 } }}>
+        <Typography sx={eyebrowSx}>Account</Typography>
+        <Typography sx={{ fontWeight: 700, fontSize: "1.15rem", mt: 0.5, mb: 3 }}>Personal details</Typography>
+
+        <DetailRow icon={<BadgeRoundedIcon />} label="Display name">
+          {editingName ? (
+            <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap", alignItems: "center", mt: 0.5 }}>
+              <TextField
+                value={nameInput}
+                onChange={e => setNameInput(e.target.value)}
+                onKeyDown={e => e.key === "Enter" && handleSaveName()}
+                size="small"
+                autoFocus
+                sx={{ ...fieldSx, minWidth: 240 }}
+              />
+              <Button onClick={handleSaveName} disabled={busy} sx={primaryButtonSx}>
+                {busy ? <CircularProgress size={18} sx={{ color: "#fff" }} /> : "Save"}
+              </Button>
+              <Button
+                onClick={() => {
+                  setEditingName(false);
+                  setNameInput(profile.username);
+                }}
+                sx={ghostButtonSx}
+              >
+                Cancel
+              </Button>
+            </Box>
+          ) : (
+            <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+              <Typography sx={{ fontWeight: 600 }}>{profile.username}</Typography>
+              <IconButton aria-label="Edit name" size="small" onClick={() => setEditingName(true)} sx={{ color: ui.accentSoft }}>
+                <EditRoundedIcon fontSize="small" />
               </IconButton>
             </Box>
+          )}
+        </DetailRow>
 
-            <input
-              ref={fileRef}
-              type="file"
-              accept="image/*"
-              style={{ display: "none" }}
-              onChange={handleFileSelect}
-            />
+        <DetailRow icon={<MailOutlineRoundedIcon />} label="Email address">
+          <Typography sx={{ fontWeight: 600 }}>{profile.email}</Typography>
+        </DetailRow>
 
-            <Stack direction="row" spacing={1} sx={{ mt: 2 }}>
-              <Button
-                variant="contained"
-                onClick={handleUpload}
-                disabled={uploading || !selectedFile}
-                sx={{ textTransform: "none" }}
-              >
-                {uploading ? <CircularProgress size={20} /> : "Upload"}
-              </Button>
+        {memberSince && (
+          <DetailRow icon={<CalendarTodayRoundedIcon />} label="Member since" last>
+            <Typography sx={{ fontWeight: 600 }}>{memberSince}</Typography>
+          </DetailRow>
+        )}
 
-              <Button
-                variant="outlined"
-                onClick={handleRemovePhoto}
-                disabled={uploading || (!user.avatarUrl && !preview)}
-                startIcon={<DeleteIcon />}
-                sx={{ textTransform: "none" }}
-              >
-                Remove
-              </Button>
-            </Stack>
-          </Box>
+        <Box sx={{ mt: 3, pt: 3, borderTop: `1px solid ${ui.border}`, display: "flex", justifyContent: "flex-end" }}>
+          <Button
+            startIcon={<LogoutRoundedIcon />}
+            onClick={() => setConfirmLogout(true)}
+            sx={{ ...ghostButtonSx, color: ui.danger, borderColor: "rgba(248,113,113,0.3)" }}
+          >
+            Log out
+          </Button>
+        </Box>
+      </Box>
 
-          {/* Right: Details */}
-          <Box sx={{ flex: 1 }}>
-            <Stack direction="row" justifyContent="space-between" alignItems="center">
-              <Typography variant="h4" sx={{ fontWeight: 700 }}>
-                Profile
-              </Typography>
-            </Stack>
+      <ConfirmDialog
+        open={confirmLogout}
+        tone="neutral"
+        icon="logout"
+        title="Log out of Evenza?"
+        message="You'll need to sign in again to book tickets or see your bookings."
+        confirmLabel="Log out"
+        cancelLabel="Stay signed in"
+        onConfirm={() => {
+          logout();
+          router.replace("/");
+        }}
+        onClose={() => setConfirmLogout(false)}
+      />
 
-            <Divider sx={{ my: 2 }} />
-
-            <Stack spacing={2}>
-              <Box>
-                <Typography variant="subtitle2" color="text.secondary">
-                  Name
-                </Typography>
-
-                {!editingName ? (
-                  <Stack direction="row" alignItems="center" spacing={1}>
-                    <Typography variant="h6" sx={{ mt: 0.5 }}>
-                      {user.username}
-                    </Typography>
-                    <IconButton
-                      size="small"
-                      onClick={() => {
-                        setEditingName(true);
-                        setNameInput(user.username);
-                      }}
-                    >
-                      <EditIcon fontSize="small" />
-                    </IconButton>
-                  </Stack>
-                ) : (
-                  <Stack direction={{ xs: "column", sm: "row" }} spacing={1} alignItems="center">
-                    <TextField
-                      value={nameInput}
-                      onChange={(e) => setNameInput(e.target.value)}
-                      size="small"
-                      sx={{ maxWidth: 360 }}
-                    />
-                    <Button variant="contained" onClick={handleSaveName} disabled={uploading}>
-                      {uploading ? <CircularProgress size={18} /> : "Save"}
-                    </Button>
-                    <Button
-                      variant="text"
-                      onClick={() => {
-                        setEditingName(false);
-                        setNameInput(user.username);
-                      }}
-                    >
-                      Cancel
-                    </Button>
-                  </Stack>
-                )}
-              </Box>
-
-              <Box>
-                <Typography variant="subtitle2" color="text.secondary">
-                  Email
-                </Typography>
-                <Typography variant="body1">{user.email}</Typography>
-              </Box>
-            </Stack>
-
-            <Divider sx={{ my: 3 }} />
-
-            <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
-
-
-              <Button variant="contained" onClick={() => router.push("/events")} sx={{ textTransform: "none" }}>
-                Back to Events
-              </Button>
-            </Stack>
-          </Box>
-        </Stack>
-      </Paper>
-
-      <Snackbar open={snack.open} autoHideDuration={4000} onClose={closeSnack}>
-        <Alert onClose={closeSnack} severity={snack.severity} sx={{ width: "100%" }}>
-          {snack.msg}
-        </Alert>
+      <Snackbar
+        open={!!snack}
+        autoHideDuration={3500}
+        onClose={() => setSnack(null)}
+        anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
+      >
+        {snack ? (
+          <Alert onClose={() => setSnack(null)} severity={snack.severity} variant="filled" sx={{ borderRadius: 2.5 }}>
+            {snack.msg}
+          </Alert>
+        ) : undefined}
       </Snackbar>
+    </>
+  );
+}
+
+function DetailRow({ icon, label, children, last }: { icon: React.ReactNode; label: string; children: React.ReactNode; last?: boolean }) {
+  return (
+    <Box sx={{ display: "flex", gap: 2, py: 2, borderBottom: last ? "none" : `1px solid ${ui.border}` }}>
+      <Box sx={{ color: ui.accentSoft, mt: 0.25, "& svg": { fontSize: 21 } }}>{icon}</Box>
+      <Box sx={{ flex: 1, minWidth: 0 }}>
+        <Typography sx={{ fontSize: "0.75rem", color: ui.faint, mb: 0.25 }}>{label}</Typography>
+        {children}
+      </Box>
     </Box>
+  );
+}
+
+export default function ProfilePage() {
+  return (
+    <UserShell allowAdmin>
+      <ProfileContent />
+    </UserShell>
   );
 }

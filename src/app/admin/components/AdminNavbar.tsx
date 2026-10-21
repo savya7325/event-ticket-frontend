@@ -4,10 +4,10 @@ import Link from "next/link";
 import { useAuth } from "../../context/AuthContext";
 
 export default function AdminNavbar() {
-  const { user, loading } = useAuth();
+  const { loading, isAdmin } = useAuth();
 
   if (loading) return null;
-  if (!user || user.role !== "admin") return null; // Only admin sees navbar
+  if (!isAdmin) return null; // Only admin sees navbar
 
   return (
     <nav style={{ display: "flex", gap: "20px", padding: "10px", background: "#f0f0f0" }}>

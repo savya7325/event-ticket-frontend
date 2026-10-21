@@ -1,356 +1,369 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { useAuth } from "./context/AuthContext";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
+import { Box, Button, ButtonBase, CircularProgress, IconButton, InputAdornment, TextField, Typography, useMediaQuery } from "@mui/material";
+import VisibilityRoundedIcon from "@mui/icons-material/VisibilityRounded";
+import VisibilityOffRoundedIcon from "@mui/icons-material/VisibilityOffRounded";
+import EventSeatRoundedIcon from "@mui/icons-material/EventSeatRounded";
+import MarkEmailReadRoundedIcon from "@mui/icons-material/MarkEmailReadRounded";
+import CelebrationRoundedIcon from "@mui/icons-material/CelebrationRounded";
+import ChevronLeftRoundedIcon from "@mui/icons-material/ChevronLeftRounded";
+import ChevronRightRoundedIcon from "@mui/icons-material/ChevronRightRounded";
+import ErrorOutlineRoundedIcon from "@mui/icons-material/ErrorOutlineRounded";
+import { useAuth } from "./context/AuthContext";
+import { homePathFor } from "./auth/roles";
+import PublicNavbar from "./components/PublicNavbar";
+import SiteFooter from "./components/SiteFooter";
+import { darkFieldSx, eyebrowSx, primaryButtonSx, ui } from "./components/theme";
+
+const px = (id: number, w = 1200) => `https://images.pexels.com/photos/${id}/pexels-photo-${id}.jpeg?auto=compress&cs=tinysrgb&w=${w}`;
+
+// Background: videos on larger screens, the still photo on phones (the videos are 4K).
+const POSTER = px(2101488, 1800);
+const BACKGROUND_VIDEOS = ["https://www.pexels.com/download/video/2845487/", "https://www.pexels.com/download/video/31580002/"];
+
+const HIGHLIGHTS = [
+  { id: 1190297, label: "Live concerts" },
+  { id: 1540406, label: "Festivals" },
+  { id: 269140, label: "Theatre" },
+  { id: 5475779, label: "Tech meetups" },
+  { id: 169190, label: "Weddings & galas" },
+  { id: 2814828, label: "Nightlife" },
+];
+
+const PERKS = [
+  { icon: <EventSeatRoundedIcon />, text: "Pick your exact seat on a live seat map" },
+  { icon: <MarkEmailReadRoundedIcon />, text: "Instant booking confirmation by email" },
+  { icon: <CelebrationRoundedIcon />, text: "Concerts, workshops, festivals and more" },
+];
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export default function Home() {
-  const { login, register } = useAuth();
-  const [isRegister, setIsRegister] = useState(false);
-  const [formData, setFormData] = useState({
-    username: "",
-    email: "",
-    password: "",
-  });
-  const [message, setMessage] = useState("");
-  const [current, setCurrent] = useState(0);
-
+  const { user, loading, login, register } = useAuth();
   const router = useRouter();
+  const isPhone = useMediaQuery("(max-width: 767px)");
 
-  const videos = [
-    "https://www.pexels.com/download/video/2845487/",
-    "https://www.pexels.com/download/video/31580002/",
-    "https://images.pexels.com/photos/2101488/pexels-photo-2101488.jpeg"
-  ];
+  const [isRegister, setIsRegister] = useState(false);
+  const [formData, setFormData] = useState({ username: "", email: "", password: "" });
+  const [showPassword, setShowPassword] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
+  const [touched, setTouched] = useState(false);
+  const [currentVideo, setCurrentVideo] = useState(0);
+  const railRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
-    const interval = setInterval(() => {
-      setCurrent((prev) => (prev + 1) % videos.length);
-    }, 7000);
+    const interval = setInterval(() => setCurrentVideo(prev => (prev + 1) % BACKGROUND_VIDEOS.length), 9000);
     return () => clearInterval(interval);
   }, []);
 
+  // Where to go after signing in: back to the page that sent us here (?next=), else the role's home.
+  const destinationFor = (u: Parameters<typeof homePathFor>[0]) => {
+    const next = new URLSearchParams(window.location.search).get("next");
+    const safeNext = next && next.startsWith("/") && !next.startsWith("//") ? next : null;
+    return safeNext && !next!.startsWith("/admin") ? safeNext : homePathFor(u);
+  };
+
+  // Already signed in? Skip the login screen.
+  useEffect(() => {
+    if (!loading && user) router.replace(destinationFor(user));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, user]);
+
+  const fieldErrors = {
+    username: isRegister && formData.username.trim().length < 3 ? "At least 3 characters" : "",
+    email: !EMAIL_RE.test(formData.email.trim()) ? "Enter a valid email" : "",
+    // Only new accounts need 6+; older accounts may have shorter passwords, so login just needs one.
+    password: isRegister ? (formData.password.length < 6 ? "At least 6 characters" : "") : !formData.password ? "Enter your password" : "",
+  };
+
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
+    setError("");
+  };
+
+  const switchMode = (register: boolean) => {
+    setIsRegister(register);
+    setError("");
+    setTouched(false);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setTouched(true);
+    if (Object.values(fieldErrors).some(Boolean) || submitting) return;
+    setSubmitting(true);
+    setError("");
     try {
       if (isRegister) {
-        await register({
-          username: formData.username,
-          email: formData.email,
+        const registered = await register({
+          username: formData.username.trim(),
+          email: formData.email.trim(),
           password: formData.password,
         });
-        setMessage("Registered successfully");
-        router.push("/events");
+        router.push(destinationFor(registered));
       } else {
-        await login({ email: formData.email, password: formData.password });
-        setMessage("Logged in");
-        router.push("/events");
+        const loggedIn = await login({ email: formData.email.trim(), password: formData.password });
+        // Admins (role 1) go to the admin dashboard, users (role 2) to /home.
+        router.push(destinationFor(loggedIn));
       }
-    } catch (error: any) {
-      setMessage(`Error: ${error.response?.data?.message || error.message}`);
+    } catch (err: any) {
+      setError(err.response?.data?.message || err.message || "Something went wrong. Please try again.");
+      setSubmitting(false);
     }
   };
 
+  const scrollRail = (dir: 1 | -1) => {
+    const rail = railRef.current;
+    if (rail) rail.scrollBy({ left: dir * rail.clientWidth * 0.8, behavior: "smooth" });
+  };
+
+  const fieldProps = (name: keyof typeof formData) => ({
+    name,
+    value: formData[name],
+    onChange: handleChange,
+    error: touched && !!fieldErrors[name],
+    helperText: touched && fieldErrors[name] ? fieldErrors[name] : " ",
+    fullWidth: true,
+    sx: darkFieldSx,
+    // Labels sit above the field: browser autofill fills inputs without telling React, which left labels overlapping the text.
+    slotProps: { inputLabel: { shrink: true } },
+  });
 
   return (
-    <div style={{ position: "relative", minHeight: "100vh", overflow: "hidden", fontFamily: "'Roboto', sans-serif" }}>
-      {/* Background Video Slider */}
-      {videos.map((video, index) => (
-        <video
-          key={index}
-          src={video}
-          autoPlay
-          loop
-          muted
-          playsInline
-          style={{
-            position: "absolute",
-            inset: 0,
-            width: "100%",
-            height: "100%",
-            objectFit: "cover",
-            opacity: index === current ? 1 : 0,
-            transition: "opacity 1.5s ease-in-out",
-            filter: "brightness(30%) contrast(120%)",
-            zIndex: 0,
-          }}
-        />
-      ))}
+    <Box sx={{ minHeight: "100vh", bgcolor: "#0d0a14", color: ui.text }}>
+      {/* ---------- Hero with background ---------- */}
+      <Box component="section" sx={{ position: "relative", overflow: "hidden", minHeight: { md: "100vh" }, pb: { xs: 6, md: 8 } }}>
+        <Box aria-hidden sx={{ position: "absolute", inset: 0, zIndex: 0 }}>
+          <Box sx={{ position: "absolute", inset: 0, backgroundImage: `url('${POSTER}')`, backgroundSize: "cover", backgroundPosition: "center" }} />
+          {!isPhone && (
+            // Only the active video is mounted, so just one file downloads at a time.
+            <video
+              key={BACKGROUND_VIDEOS[currentVideo]}
+              src={BACKGROUND_VIDEOS[currentVideo]}
+              poster={POSTER}
+              autoPlay
+              muted
+              loop
+              playsInline
+              preload="auto"
+              style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", animation: "fade-up 1.2s ease both" }}
+            />
+          )}
+          <Box
+            sx={{
+              position: "absolute",
+              inset: 0,
+              background:
+                "linear-gradient(90deg, rgba(13,10,20,0.92) 0%, rgba(13,10,20,0.7) 50%, rgba(13,10,20,0.55) 100%), linear-gradient(180deg, rgba(13,10,20,0) 60%, #0d0a14 100%)",
+            }}
+          />
+          <Box sx={{ position: "absolute", inset: 0, background: "radial-gradient(700px 400px at 85% 30%, rgba(124,58,237,0.35), transparent 70%)" }} />
+        </Box>
 
-      {/* Dark Red-Violet Overlay */}
-      <div
-        style={{
-          position: "absolute",
-          inset: 0,
-          // background: "linear-gradient(to bottom right, rgba(138,43,226,0.6), rgba(128,0,0,0.7))",
-          zIndex: 1,
-        }}
-      />
+        <Box sx={{ position: "relative", zIndex: 1 }}>
+          <PublicNavbar />
 
-      {/* Navbar */}
-      <nav
-        style={{
-          position: "relative",
-          zIndex: 2,
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          padding: "15px 50px",
-          color: "#fff",
-          background: "rgba(129, 4, 4, 0.4)",
-          borderRadius: "10px",
-          margin: "20px",
-        }}
-      >
-        <h2 style={{ fontSize: "2rem", fontWeight: "bold", letterSpacing: "2px" }}>EVENZA</h2>
-        <div style={{ display: "flex", gap: "25px", fontSize: "1.1rem" }}>
-          <Link href="/events" style={navLinkStyle}>Contact Us</Link>
-          <Link href="/about" style={navLinkStyle}>About Us</Link>
-        </div>
-      </nav>
+          <Box
+            sx={{
+              maxWidth: 1180,
+              mx: "auto",
+              px: { xs: 2, sm: 3, md: 4 },
+              pt: { xs: 5, md: 10 },
+              display: "grid",
+              gridTemplateColumns: { xs: "minmax(0,1fr)", md: "minmax(0,1.1fr) minmax(0,440px)" },
+              gap: { xs: 5, md: 8 },
+              alignItems: "center",
+            }}
+          >
+            {/* Pitch */}
+            <Box sx={{ textAlign: { xs: "center", md: "left" }, animation: "fade-up .6s ease both" }}>
+              <Typography sx={{ ...eyebrowSx, color: ui.gold }}>🎟️ Live events, booked in seconds</Typography>
+              <Typography component="h1" sx={{ fontSize: { xs: "2.3rem", sm: "3rem", md: "3.6rem" }, fontWeight: 800, lineHeight: 1.05, mt: 1.5, letterSpacing: "-1px" }}>
+                Experience events{" "}
+                <Box component="span" sx={{ background: "linear-gradient(90deg, #c4b5fd, #f472b6, #fcd34d)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>
+                  like never before
+                </Box>
+              </Typography>
+              <Typography sx={{ color: "rgba(237,233,254,0.82)", mt: 2.5, fontSize: { xs: "1rem", md: "1.15rem" }, lineHeight: 1.7, maxWidth: 520, mx: { xs: "auto", md: 0 } }}>
+                Book tickets, explore events and manage your experience seamlessly with Evenza.
+              </Typography>
+              <Box component="ul" sx={{ listStyle: "none", mt: 3.5, display: { xs: "none", sm: "grid" }, gap: 1.5, justifyContent: { xs: "center", md: "start" } }}>
+                {PERKS.map(p => (
+                  <Box component="li" key={p.text} sx={{ display: "flex", alignItems: "center", gap: 1.5, color: ui.muted, fontSize: "0.95rem" }}>
+                    <Box sx={{ width: 34, height: 34, borderRadius: 2, display: "grid", placeItems: "center", color: ui.accentSoft, bgcolor: "rgba(139,92,246,0.16)", border: "1px solid rgba(139,92,246,0.3)", "& svg": { fontSize: 18 } }}>
+                      {p.icon}
+                    </Box>
+                    {p.text}
+                  </Box>
+                ))}
+              </Box>
+            </Box>
 
-      {/* Hero Section */}
-      <div
-        style={{
-          position: "absolute",
-          top: "12%",
-          left: "50%",
-          transform: "translateX(-50%)",
-          textAlign: "center",
-          color: "#fff",
-          zIndex: 2,
-          maxWidth: "750px",
-          padding: "10px 20px",
-        }}
-      >
-        <h1 style={{ fontSize: "3.5rem", fontWeight: "bold", textShadow: "2px 2px 10px rgba(0,0,0,0.7)" }}>
-          Experience Events Like Never Before
-        </h1>
-        <p style={{ fontSize: "1.3rem", lineHeight: "1.8", color: "#ffccd5", marginTop: "15px" }}>
-          Book tickets, explore events, and manage your experience seamlessly with <b>EVENZA</b>.
-        </p>
-      </div>
-
-      {/* Login/Register Form */}
-      <div
-        style={{
-          position: "relative",
-          zIndex: 2,
-          display: "flex",
-          justifyContent: "center",
-          alignItems: "center",
-          minHeight: "150vh",
-          padding: "20px",
-          paddingTop: "25px",
-        }}
-      >
-        <form
-          onSubmit={handleSubmit}
-          style={{
-            display: "flex",
-            flexDirection: "column",
-            gap: "15px",
-            width: "380px",
-            maxWidth: "90%",
-            padding: "40px",
-            borderRadius: "15px",
-            background: "rgba(20,0,20,0.6)",
-            backdropFilter: "blur(12px)",
-            boxShadow: "0 10px 40px rgba(0,0,0,0.7)",
-            color: "#fff",
-            border: "1px solid rgba(255,255,255,0.1)",
-          }}
-        >
-          <h2 style={{ textAlign: "center", marginBottom: "10px" }}>
-            {isRegister ? "Register" : "Login"}
-          </h2>
-
-        {isRegister && (
-  <input
-    type="text"
-    name="username"
-    placeholder="Username"
-    value={formData.username}
-    onChange={handleChange}
-    required
-    style={inputStyle}
-  />
-)}
-
-<input
-  type="email"
-  name="email"
-  placeholder="Email"
-  autoComplete="off"
-  value={formData.email}
-  onChange={handleChange}
-  required
-  style={inputStyle}
-/>
-<input
-  type="password"
-  name="password"
-  placeholder="Password"
-  autoComplete="new-password"
-  value={formData.password}
-  onChange={handleChange}
-  required
-  style={inputStyle}
-/>
-
-          <button type="submit" style={buttonStyle}>
-            {isRegister ? "Register" : "Login"}
-          </button>
-
-          <p style={{ textAlign: "center", fontSize: "0.95rem" }}>
-            {isRegister ? "Already have an account?" : "Don't have an account?"}{" "}
-            <span
-              style={{ color: "#f4325cff", cursor: "pointer", fontWeight: "bold" }}
-              onClick={() => setIsRegister(!isRegister)}
-            >
-              {isRegister ? "Login here" : "Register here"}
-            </span>
-          </p>
-
-          {message && (
-            <p
-              style={{
-                marginTop: "10px",
-                color: message.startsWith("Error") ? "#ff4d4d" : "#00ff7f",
-                fontWeight: "bold",
-                textAlign: "center",
+            {/* Auth card */}
+            <Box
+              component="form"
+              noValidate
+              autoComplete="off" // start empty: no saved logins filled in on page load
+              onSubmit={handleSubmit}
+              sx={{
+                width: "100%",
+                maxWidth: 440,
+                mx: "auto",
+                p: { xs: 3, sm: 4 },
+                borderRadius: 5,
+                bgcolor: "rgba(18,14,26,0.78)",
+                backdropFilter: "blur(16px)",
+                border: `1px solid ${ui.border}`,
+                boxShadow: "0 30px 80px rgba(0,0,0,0.55)",
+                animation: "fade-up .6s ease .1s both",
               }}
             >
-              {message}
-            </p>
-          )}
-        </form>
-      </div>
-{/* Event Highlights Section  */}
-<div
-  style={{
-    position: "relative",
-    zIndex: 2,
-    background: "rgba(30,0,20,0.85)",
-    padding: "60px 20px",
-  }}
->
-  <h2 style={{ color: "#ff3399", fontSize: "2.2rem", marginBottom: "30px", textAlign: "center" }}>
-    Event Highlights
-  </h2>
+              {/* Login / Register switch */}
+              <Box role="tablist" sx={{ display: "grid", gridTemplateColumns: "1fr 1fr", p: 0.5, mb: 3, borderRadius: 99, bgcolor: "rgba(255,255,255,0.05)", border: `1px solid ${ui.border}` }}>
+                {[
+                  { label: "Log in", value: false },
+                  { label: "Sign up", value: true },
+                ].map(t => (
+                  <ButtonBase
+                    key={t.label}
+                    role="tab"
+                    aria-selected={isRegister === t.value}
+                    onClick={() => switchMode(t.value)}
+                    sx={{
+                      py: 1,
+                      borderRadius: 99,
+                      fontWeight: 700,
+                      fontSize: "0.9rem",
+                      color: isRegister === t.value ? "#fff" : ui.muted,
+                      background: isRegister === t.value ? ui.gradient : "transparent",
+                      transition: "all .2s ease",
+                    }}
+                  >
+                    {t.label}
+                  </ButtonBase>
+                ))}
+              </Box>
 
-  <div
-    style={{
-      display: "flex",
-      gap: "20px",
-      overflowX: "auto",
-      scrollSnapType: "x mandatory",
-      paddingBottom: "20px",
-      paddingLeft: "20px",
-      paddingRight: "20px",
-      scrollbarWidth: "thin",
-      scrollbarColor: "#ff3399 rgba(0,0,0,0.2)",
-    }}
-  >
-    {[
-       "https://images.pexels.com/photos/1190297/pexels-photo-1190297.jpeg",
- "https://images.pexels.com/photos/1540406/pexels-photo-1540406.jpeg",
-  "https://images.pexels.com/photos/269140/pexels-photo-269140.jpeg",
+              <Typography sx={{ fontWeight: 800, fontSize: "1.5rem" }}>{isRegister ? "Create your account" : "Welcome back"}</Typography>
+              <Typography sx={{ color: ui.muted, fontSize: "0.9rem", mt: 0.5, mb: 3 }}>
+                {isRegister ? "It takes less than a minute. Then grab your seats." : "Log in to book tickets and see your bookings."}
+              </Typography>
 
-  "https://images.pexels.com/photos/5475779/pexels-photo-5475779.jpeg",
- "https://images.pexels.com/photos/169190/pexels-photo-169190.jpeg",
-  "https://images.pexels.com/photos/2814828/pexels-photo-2814828.jpeg",
-    ].map((img, i) => (
-      <div
-        key={i}
-        style={{
-          flex: "0 0 auto",
-          width: "280px",
-          height: "160px",
-          borderRadius: "12px",
-          backgroundImage: `url(${img})`,
-          backgroundSize: "cover",
-          backgroundPosition: "center",
-          scrollSnapAlign: "start",
-          boxShadow: "0 6px 15px rgba(255,0,150,0.5)",
-          transition: "transform 0.3s ease, box-shadow 0.3s ease, rotate 0.3s ease",
-          cursor: "pointer",
-        }}
-        onMouseEnter={(e) => {
-          e.currentTarget.style.transform = "scale(1.1) rotateY(3deg)";
-          e.currentTarget.style.boxShadow = "0 12px 30px rgba(255,0,150,0.8)";
-        }}
-        onMouseLeave={(e) => {
-          e.currentTarget.style.transform = "scale(1) rotateY(0deg)";
-          e.currentTarget.style.boxShadow = "0 6px 15px rgba(255,0,150,0.5)";
-        }}
-      />
-    ))}
-  </div>
+              {isRegister && <TextField label="Username" placeholder="Pick a username" autoComplete="off" {...fieldProps("username")} />}
+              <TextField label="Email" placeholder="you@example.com" type="email" autoComplete="off" {...fieldProps("email")} />
+              <TextField
+                label="Password"
+                placeholder={isRegister ? "At least 6 characters" : "Your password"}
+                type={showPassword ? "text" : "password"}
+                // "new-password" stops Chrome filling a saved password when the page loads.
+                autoComplete="new-password"
+                {...fieldProps("password")}
+                slotProps={{
+                  inputLabel: { shrink: true },
+                  input: {
+                    endAdornment: (
+                      <InputAdornment position="end">
+                        <IconButton aria-label={showPassword ? "Hide password" : "Show password"} onClick={() => setShowPassword(s => !s)} edge="end" size="small">
+                          {showPassword ? <VisibilityOffRoundedIcon fontSize="small" /> : <VisibilityRoundedIcon fontSize="small" />}
+                        </IconButton>
+                      </InputAdornment>
+                    ),
+                  },
+                }}
+              />
 
-<div
-  style={{
-    position: "relative",
-    zIndex: 2,
-    background: "#120020",
-    color: "#fff",
-    textAlign: "center",
-    padding: "30px 20px",
-    marginTop: "50px",
-  }}
->
-  <h3 style={{ margin: "0 0 10px 0", fontSize: "1.5rem" }}>EVENZA</h3>
-  <p style={{ margin: 0, fontSize: "0.9rem" }}>&copy; 2025 EVENZA. All rights reserved.</p>
-  <div style={{ marginTop: "10px", display: "flex", justifyContent: "center", gap: "15px" }}>
-  </div>
-</div>
-</div>
-    </div>
+              {error && (
+                <Box role="alert" sx={{ display: "flex", gap: 1, alignItems: "flex-start", p: 1.5, mb: 2, borderRadius: 2.5, color: "#fecaca", bgcolor: "rgba(248,113,113,0.1)", border: "1px solid rgba(248,113,113,0.3)", fontSize: "0.86rem" }}>
+                  <ErrorOutlineRoundedIcon sx={{ fontSize: 19, color: ui.danger, mt: 0.1 }} />
+                  {error}
+                </Box>
+              )}
 
-    
+              <Button type="submit" disabled={submitting} fullWidth sx={{ ...primaryButtonSx, py: 1.4, fontSize: "1rem", "&.Mui-disabled": { color: "rgba(255,255,255,0.75)", opacity: 0.8 } }}>
+                {submitting ? <CircularProgress size={22} sx={{ color: "#fff" }} /> : isRegister ? "Create account" : "Log in"}
+              </Button>
+
+              <Typography sx={{ textAlign: "center", fontSize: "0.88rem", color: ui.muted, mt: 2.5 }}>
+                {isRegister ? "Already have an account?" : "New to Evenza?"}{" "}
+                <ButtonBase onClick={() => switchMode(!isRegister)} sx={{ color: ui.accentSoft, fontWeight: 700, fontSize: "inherit", verticalAlign: "baseline", "&:hover": { color: "#fff" } }}>
+                  {isRegister ? "Log in" : "Create an account"}
+                </ButtonBase>
+              </Typography>
+            </Box>
+          </Box>
+        </Box>
+      </Box>
+
+      {/* ---------- Highlights ---------- */}
+      <Box component="section" sx={{ maxWidth: 1180, mx: "auto", px: { xs: 2, sm: 3, md: 4 }, py: { xs: 6, md: 9 } }}>
+        <Box sx={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 2, mb: 3 }}>
+          <Box>
+            <Typography sx={eyebrowSx}>Event highlights</Typography>
+            <Typography component="h2" sx={{ fontSize: { xs: "1.7rem", md: "2.3rem" }, fontWeight: 800, mt: 0.5 }}>
+              Moments you could be part of
+            </Typography>
+          </Box>
+          <Box sx={{ display: { xs: "none", sm: "flex" }, gap: 1 }}>
+            {([-1, 1] as const).map(dir => (
+              <IconButton
+                key={dir}
+                aria-label={dir === -1 ? "Scroll left" : "Scroll right"}
+                onClick={() => scrollRail(dir)}
+                sx={{ color: "#fff", border: `1px solid ${ui.border}`, bgcolor: ui.surface, "&:hover": { bgcolor: ui.surfaceHover, borderColor: "rgba(167,139,250,0.5)" } }}
+              >
+                {dir === -1 ? <ChevronLeftRoundedIcon /> : <ChevronRightRoundedIcon />}
+              </IconButton>
+            ))}
+          </Box>
+        </Box>
+
+        {/* Scroll-snap rail; scrollbar hidden, edges fade out */}
+        <Box
+          ref={railRef}
+          sx={{
+            display: "grid",
+            gridAutoFlow: "column",
+            gridAutoColumns: { xs: "78%", sm: "calc((100% - 16px) / 2)", md: "calc((100% - 32px) / 3)" },
+            gap: 2,
+            overflowX: "auto",
+            scrollSnapType: "x mandatory",
+            scrollbarWidth: "none",
+            "&::-webkit-scrollbar": { display: "none" },
+            maskImage: { xs: "linear-gradient(90deg, #000 85%, transparent)", md: "none" },
+            pb: 1,
+          }}
+        >
+          {HIGHLIGHTS.map(h => (
+            <Box
+              key={h.id}
+              className="tap"
+              sx={{
+                position: "relative",
+                scrollSnapAlign: "start",
+                aspectRatio: "4 / 3",
+                borderRadius: 4,
+                overflow: "hidden",
+                border: `1px solid ${ui.border}`,
+                backgroundColor: "#1d1629",
+                backgroundImage: `linear-gradient(180deg, transparent 55%, rgba(13,10,20,0.85)), url('${px(h.id, 800)}')`,
+                backgroundSize: "cover",
+                backgroundPosition: "center",
+                transition: "transform .3s ease, border-color .3s ease",
+                "&:hover": { transform: "translateY(-4px)", borderColor: "rgba(167,139,250,0.45)" },
+              }}
+            >
+              <Box sx={{ position: "absolute", left: 14, bottom: 14, px: 1.25, py: 0.5, borderRadius: 99, fontSize: "0.8rem", fontWeight: 700, bgcolor: "rgba(13,10,20,0.7)", backdropFilter: "blur(6px)", border: `1px solid ${ui.border}` }}>
+                {h.label}
+              </Box>
+            </Box>
+          ))}
+        </Box>
+      </Box>
+
+      <SiteFooter />
+    </Box>
   );
 }
-
-// Styles
-const navLinkStyle: React.CSSProperties = {
-  color: "#ff99ff",
-  textDecoration: "none",
-  fontWeight: "500",
-  transition: "color 0.3s",
-};
-
-const inputStyle: React.CSSProperties = {
-  padding: "14px",
-  borderRadius: "8px",
-  border: "none",
-  outline: "none",
-  fontSize: "1rem",
-  background: "rgba(255,255,255,0.1)",
-  color: "#fff",
-};
-
-const buttonStyle: React.CSSProperties = {
-  padding: "14px",
-  borderRadius: "8px",
-  border: "none",
-  background: "linear-gradient(90deg, #ff0066 0%, #9900ff 100%)",
-  color: "#fff",
-  fontWeight: "bold",
-  fontSize: "1rem",
-  cursor: "pointer",
-  transition: "transform 0.2s ease, box-shadow 0.2s ease",
-  boxShadow: "0 8px 20px rgba(255,0,150,0.5)",
-};
-
-
-const footerLinkStyle: React.CSSProperties = {
-  color: "#ff99ff",
-  textDecoration: "none",
-  fontWeight: "500",
-  transition: "color 0.3s",
-};
